@@ -68,7 +68,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
   document.getElementById('result').classList.remove('hidden');
 });
 
-// Help modal logic
+// Help modal logic fixed (wait for DOM)
 document.addEventListener('DOMContentLoaded', () => {
   const helpBtn = document.getElementById('helpBtn');
   const helpOverlay = document.getElementById('helpOverlay');
@@ -80,7 +80,6 @@ document.addEventListener('DOMContentLoaded', () => {
     helpOverlay.classList.remove('hidden');
     helpClose.focus();
   }
-
   function closeHelp() {
     helpOverlay.classList.add('hidden');
   }
@@ -88,16 +87,13 @@ document.addEventListener('DOMContentLoaded', () => {
   helpBtn.addEventListener('click', openHelp);
   helpClose.addEventListener('click', closeHelp);
 
-  // Close when clicking outside the modal content
   helpOverlay.addEventListener('click', (e) => {
     if (e.target === helpOverlay) closeHelp();
   });
 
-  // Close with Esc key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) {
       closeHelp();
     }
   });
 });
-
