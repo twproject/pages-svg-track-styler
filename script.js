@@ -69,29 +69,35 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 });
 
 // Help modal logic
-const helpBtn = document.getElementById('helpBtn');
-const helpOverlay = document.getElementById('helpOverlay');
-const helpClose = document.getElementById('helpClose');
+document.addEventListener('DOMContentLoaded', () => {
+  const helpBtn = document.getElementById('helpBtn');
+  const helpOverlay = document.getElementById('helpOverlay');
+  const helpClose = document.getElementById('helpClose');
 
-function openHelp() {
-  helpOverlay.classList.remove('hidden');
-  helpClose.focus();
-}
-function closeHelp() {
-  helpOverlay.classList.add('hidden');
-}
+  if (!helpBtn || !helpOverlay || !helpClose) return;
 
-helpBtn.addEventListener('click', openHelp);
-helpClose.addEventListener('click', closeHelp);
-
-// Close when clicking outside modal content
-helpOverlay.addEventListener('click', (e) => {
-  if (e.target === helpOverlay) closeHelp();
-});
-
-// Close on Esc
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) {
-    closeHelp();
+  function openHelp() {
+    helpOverlay.classList.remove('hidden');
+    helpClose.focus();
   }
+
+  function closeHelp() {
+    helpOverlay.classList.add('hidden');
+  }
+
+  helpBtn.addEventListener('click', openHelp);
+  helpClose.addEventListener('click', closeHelp);
+
+  // Close when clicking outside the modal content
+  helpOverlay.addEventListener('click', (e) => {
+    if (e.target === helpOverlay) closeHelp();
+  });
+
+  // Close with Esc key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) {
+      closeHelp();
+    }
+  });
 });
+
