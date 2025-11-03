@@ -12,49 +12,74 @@
     <button id="helpBtn" class="help-btn" aria-haspopup="dialog" aria-controls="helpOverlay">❔ Help</button>
   </header>
 
-  <main class="container">
-    <h1>SVG Track Styler</h1>
-    <p>Apply double-stroke styles to your SVG GPX map tracks directly in the browser.</p>
+  <main class="container two-col">
+    <section class="panel controls">
+      <h1>SVG Track Styler</h1>
+      <p>Apply double-stroke styles to your SVG GPX map tracks directly in the browser. Live preview on the right.</p>
 
-    <section class="card">
-      <label for="inputSvg">Select SVG file:</label>
-      <input type="file" id="inputSvg" accept="image/svg+xml">
+      <div class="card">
+        <label for="inputSvg">Select SVG file:</label>
+        <input type="file" id="inputSvg" accept="image/svg+xml">
 
-      <div class="form-row">
-        <label>Outer color:</label>
-        <input type="text" id="outerColor" value="red" placeholder="red or #ff0000">
+        <div class="grid-2">
+          <div class="form-row">
+            <label>Outer color</label>
+            <div class="color-row">
+              <input type="color" id="outerColorPicker" value="#ff0000" title="Pick outer color">
+              <input type="text" id="outerColor" value="red" placeholder="red or #ff0000">
+            </div>
+          </div>
+          <div class="form-row">
+            <label>Inner color</label>
+            <div class="color-row">
+              <input type="color" id="innerColorPicker" value="#ffff00" title="Pick inner color">
+              <input type="text" id="innerColor" value="yellow" placeholder="yellow or #ffff00">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label>Outer factor <span id="outerFactorVal" class="value">3.0</span></label>
+            <input type="range" id="outerFactor" value="3" step="0.1" min="0" max="10">
+          </div>
+          <div class="form-row">
+            <label>Inner factor <span id="innerFactorVal" class="value">0.7</span></label>
+            <input type="range" id="innerFactor" value="0.7" step="0.05" min="0" max="10">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>Group ID</label>
+          <input type="text" id="groupId" value="trk1">
+        </div>
+
+        <div class="form-row">
+          <label><input type="checkbox" id="noWatermark"> Remove watermark text</label>
+        </div>
+
+        <div class="form-row">
+          <label><input type="checkbox" id="autoPreview" checked> Auto preview (update while typing)</label>
+        </div>
+
+        <div class="actions">
+          <button id="refreshBtn" class="secondary">Refresh preview</button>
+          <a id="downloadLink" class="primary disabled" download="styled.svg" aria-disabled="true">Download SVG</a>
+        </div>
+        <p id="status" class="status"></p>
       </div>
-
-      <div class="form-row">
-        <label>Inner color:</label>
-        <input type="text" id="innerColor" value="yellow" placeholder="yellow or #ffff00">
-      </div>
-
-      <div class="form-row">
-        <label>Outer factor:</label>
-        <input type="number" id="outerFactor" value="3" step="0.1" min="0">
-      </div>
-
-      <div class="form-row">
-        <label>Inner factor:</label>
-        <input type="number" id="innerFactor" value="0.7" step="0.1" min="0">
-      </div>
-
-      <div class="form-row">
-        <label>Group ID:</label>
-        <input type="text" id="groupId" value="trk1">
-      </div>
-
-      <div class="form-row">
-        <label><input type="checkbox" id="noWatermark"> Remove watermark text</label>
-      </div>
-
-      <button id="processBtn">Generate styled SVG</button>
     </section>
 
-    <section id="result" class="hidden">
-      <h2>Result</h2>
-      <a id="downloadLink" download="styled.svg">Download styled SVG</a>
+    <section class="panel preview">
+      <div class="preview-header">
+        <span>Live Preview</span>
+        <div class="zoom">
+          <button id="zoomOut" title="Zoom out">–</button>
+          <button id="zoomIn" title="Zoom in">+</button>
+          <button id="zoomReset" title="Reset zoom">100%</button>
+        </div>
+      </div>
+      <div id="previewWrap" class="preview-wrap">
+        <div id="preview" class="preview-canvas"></div>
+      </div>
     </section>
   </main>
 
@@ -74,7 +99,7 @@
         <li>Adjust stroke factors.</li>
         <li>Set the <code>Group ID</code> (default <code>trk1</code>).</li>
         <li>Optionally remove watermark text.</li>
-        <li>Click <strong>Generate styled SVG</strong> and download the result.</li>
+        <li>Click <strong>Download SVG</strong> to save the result.</li>
       </ol>
       <p><strong>Color tips:</strong> Use names like <code>red</code>, <code>yellow</code>, or hex codes like <code>#ff0000</code>, <code>#ffff00</code>.</p>
     </div>
