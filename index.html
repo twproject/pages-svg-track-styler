@@ -7,6 +7,11 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand">SVG Track Styler</div>
+    <button id="helpBtn" class="help-btn" aria-haspopup="dialog" aria-controls="helpOverlay">❔ Help</button>
+  </header>
+
   <main class="container">
     <h1>SVG Track Styler</h1>
     <p>Apply double-stroke styles to your SVG GPX map tracks directly in the browser.</p>
@@ -54,8 +59,26 @@
   </main>
 
   <footer>
-    <p>© 2025 SVG Track Styler — <a href="https://github.com/twproject/svg-track-styler" target="_blank">View on GitHub</a></p>
+    <p>© 2025 SVG Track Styler — <a href="https://github.com/twproject/pages-svg-track-styler" target="_blank" rel="noopener">View on GitHub</a></p>
   </footer>
+
+  <!-- Help Overlay -->
+  <div id="helpOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal">
+      <button id="helpClose" class="close" aria-label="Close help">&times;</button>
+      <h2 id="helpTitle">Help</h2>
+      <p><strong>What it does:</strong> Applies a double-stroke style to GPX/SVG tracks directly in your browser.</p>
+      <ol>
+        <li>Upload your <code>.svg</code> file.</li>
+        <li>Choose <em>outer</em> and <em>inner</em> colors.</li>
+        <li>Adjust stroke factors.</li>
+        <li>Set the <code>Group ID</code> (default <code>trk1</code>).</li>
+        <li>Optionally remove watermark text.</li>
+        <li>Click <strong>Generate styled SVG</strong> and download the result.</li>
+      </ol>
+      <p><strong>Color tips:</strong> Use names like <code>red</code>, <code>yellow</code>, or hex codes like <code>#ff0000</code>, <code>#ffff00</code>.</p>
+    </div>
+  </div>
 
   <script src="script.js"></script>
 </body>

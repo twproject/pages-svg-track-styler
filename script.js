@@ -1,3 +1,4 @@
+// Processing logic
 document.getElementById('processBtn').addEventListener('click', async () => {
   const fileInput = document.getElementById('inputSvg');
   const outerColor = document.getElementById('outerColor').value.trim();
@@ -65,4 +66,32 @@ document.getElementById('processBtn').addEventListener('click', async () => {
   link.download = file.name.replace(/\.svg$/i, '-styled.svg');
 
   document.getElementById('result').classList.remove('hidden');
+});
+
+// Help modal logic
+const helpBtn = document.getElementById('helpBtn');
+const helpOverlay = document.getElementById('helpOverlay');
+const helpClose = document.getElementById('helpClose');
+
+function openHelp() {
+  helpOverlay.classList.remove('hidden');
+  helpClose.focus();
+}
+function closeHelp() {
+  helpOverlay.classList.add('hidden');
+}
+
+helpBtn.addEventListener('click', openHelp);
+helpClose.addEventListener('click', closeHelp);
+
+// Close when clicking outside modal content
+helpOverlay.addEventListener('click', (e) => {
+  if (e.target === helpOverlay) closeHelp();
+});
+
+// Close on Esc
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) {
+    closeHelp();
+  }
 });
