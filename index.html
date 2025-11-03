@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Track Styler</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>SVG Track Styler</h1>
+    <p>Apply double-stroke styles to your SVG GPX map tracks directly in the browser.</p>
+
+    <section class="card">
+      <label for="inputSvg">Select SVG file:</label>
+      <input type="file" id="inputSvg" accept="image/svg+xml">
+
+      <div class="form-row">
+        <label>Outer color:</label>
+        <input type="text" id="outerColor" value="red" placeholder="red or #ff0000">
+      </div>
+
+      <div class="form-row">
+        <label>Inner color:</label>
+        <input type="text" id="innerColor" value="yellow" placeholder="yellow or #ffff00">
+      </div>
+
+      <div class="form-row">
+        <label>Outer factor:</label>
+        <input type="number" id="outerFactor" value="3" step="0.1" min="0">
+      </div>
+
+      <div class="form-row">
+        <label>Inner factor:</label>
+        <input type="number" id="innerFactor" value="0.7" step="0.1" min="0">
+      </div>
+
+      <div class="form-row">
+        <label>Group ID:</label>
+        <input type="text" id="groupId" value="trk1">
+      </div>
+
+      <div class="form-row">
+        <label><input type="checkbox" id="noWatermark"> Remove watermark text</label>
+      </div>
+
+      <button id="processBtn">Generate styled SVG</button>
+    </section>
+
+    <section id="result" class="hidden">
+      <h2>Result</h2>
+      <a id="downloadLink" download="styled.svg">Download styled SVG</a>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2025 SVG Track Styler — <a href="https://github.com/twproject/svg-track-styler" target="_blank">View on GitHub</a></p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
