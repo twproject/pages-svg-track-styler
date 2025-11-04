@@ -51,3 +51,30 @@ footer {text-align: center;margin-top: 1rem;color: #666;font-size: 0.9rem;}
 .preview-canvas {transform-origin: 0 0; padding: 8px; min-width: 400px; }
 .zoom button {margin-left:.25rem;border:1px solid #cfd6df;border-radius:8px;background:#fff;padding:.35rem .55rem;cursor:pointer;}
 .zoom button:hover {background:#f1f4f9;}
+
+/* Zoom buttons styled like the Refresh Preview button */
+.zoom-controls button {
+  background: #2b70f7;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.45rem 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.05s;
+}
+
+.zoom-controls button:hover {
+  background: #1d54c9;
+}
+
+.zoom-controls button:active {
+  transform: translateY(1px);
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
