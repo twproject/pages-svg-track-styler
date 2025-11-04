@@ -8,4 +8,4 @@ Enhancements:
 - Download button always exports the current preview
 - Help modal + CSS fix
 
-Deploy on GitHub Pages by replacing your existing files with these.
+https://twproject.github.io/pages-svg-track-styler/
