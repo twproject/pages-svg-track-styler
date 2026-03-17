@@ -45,13 +45,25 @@ function createSvgEl(doc, tag) {
   return doc.createElementNS(SVG_NS, tag);
 }
 
-function polylinePointsToPathD(pointsText) {
-  const pts = (pointsText || '')
-    .trim()
-    .split(/\s+/)
-    .map(p => p.split(',').map(Number))
-    .filter(p => p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+function parsePoints(pointsText) {
+  if (!pointsText) return [];
 
+  const nums = (pointsText.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+  const pts = [];
+
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    const x = nums[i];
+    const y = nums[i + 1];
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      pts.push([x, y]);
+    }
+  }
+
+  return pts;
+}
+
+function polylinePointsToPathD(pointsText) {
+  const pts = parsePoints(pointsText);
   if (!pts.length) return '';
 
   let d = `M ${pts[0][0]} ${pts[0][1]}`;
@@ -61,26 +73,58 @@ function polylinePointsToPathD(pointsText) {
   return d;
 }
 
-function normalizeTrackNode(node) {
+function makeGeometryPathFromNode(node) {
   const tag = node.tagName.toLowerCase();
 
   if (tag === 'path') {
-    return node.cloneNode(true);
+    const p = node.cloneNode(true);
+    p.removeAttribute('marker-start');
+    p.removeAttribute('marker-mid');
+    p.removeAttribute('marker-end');
+    return p;
   }
 
   if (tag === 'polyline') {
     const path = createSvgEl(node.ownerDocument, 'path');
     const d = polylinePointsToPathD(node.getAttribute('points'));
+    if (!d) return null;
+
     path.setAttribute('d', d);
 
     for (const attr of node.attributes) {
       if (attr.name === 'points') continue;
       path.setAttribute(attr.name, attr.value);
     }
+
+    path.removeAttribute('marker-start');
+    path.removeAttribute('marker-mid');
+    path.removeAttribute('marker-end');
     return path;
   }
 
-  return node.cloneNode(true);
+  return null;
+}
+
+function cleanSvgHard(svg, groupId) {
+  const allowedGroups = Array.from(svg.querySelectorAll(`g[id^='${groupId}']`));
+  if (!allowedGroups.length) {
+    throw new Error(`Group with id '${groupId}' not found.`);
+  }
+
+  Array.from(svg.childNodes).forEach(node => {
+    if (node.nodeType !== 1) return;
+
+    const tag = node.tagName.toLowerCase();
+    const isDefs = tag === 'defs';
+    const isAllowedTrackGroup = allowedGroups.includes(node);
+
+    if (!isDefs && !isAllowedTrackGroup) {
+      node.remove();
+    }
+  });
+
+  svg.querySelectorAll('text, title, desc, metadata, script').forEach(node => node.remove());
+  svg.querySelectorAll('[display="none"], [visibility="hidden"]').forEach(node => node.remove());
 }
 
 function ensureArrowSymbol(svg, color) {
@@ -97,9 +141,9 @@ function ensureArrowSymbol(svg, color) {
     symbol.setAttribute('viewBox', '-8 -6 16 12');
 
     const chevron = createSvgEl(svg.ownerDocument, 'polyline');
-    chevron.setAttribute('points', '-6,4 0,-2 6,4');
+    chevron.setAttribute('points', '-5,4 0,-1 5,4');
     chevron.setAttribute('fill', 'none');
-    chevron.setAttribute('stroke-width', '2.2');
+    chevron.setAttribute('stroke-width', '2');
     chevron.setAttribute('stroke-linecap', 'round');
     chevron.setAttribute('stroke-linejoin', 'round');
 
@@ -115,33 +159,6 @@ function ensureArrowSymbol(svg, color) {
   return symbol;
 }
 
-function cleanSvgHard(svg, groupId) {
-  const allowedGroups = Array.from(svg.querySelectorAll(`g[id^='${groupId}']`));
-  if (!allowedGroups.length) {
-    throw new Error(`Group with id '${groupId}' not found.`);
-  }
-
-  const defs = svg.querySelector('defs');
-
-  Array.from(svg.childNodes).forEach(node => {
-    if (node.nodeType !== 1) return;
-
-    const isDefs = node.tagName && node.tagName.toLowerCase() === 'defs';
-    const isAllowedTrackGroup = allowedGroups.includes(node);
-
-    if (!isDefs && !isAllowedTrackGroup) {
-      node.remove();
-    }
-  });
-
-  svg.querySelectorAll('text, title, desc, metadata, script').forEach(node => node.remove());
-  svg.querySelectorAll('[display="none"], [visibility="hidden"]').forEach(node => node.remove());
-
-  if (!defs && !svg.querySelector('defs')) {
-    // nothing
-  }
-}
-
 function addDirectionalArrows(svg, groupId, opts) {
   ensureArrowSymbol(svg, opts.arrowColor);
 
@@ -150,7 +167,7 @@ function addDirectionalArrows(svg, groupId, opts) {
   groups.forEach(g => {
     g.querySelectorAll('.direction-arrows').forEach(n => n.remove());
 
-    const geometryNodes = g.querySelectorAll('path.styled-track-inner, path.styled-track-source');
+    const geometryNodes = g.querySelectorAll('.track-geometry-path');
 
     geometryNodes.forEach(node => {
       if (typeof node.getTotalLength !== 'function' || typeof node.getPointAtLength !== 'function') {
@@ -171,19 +188,25 @@ function addDirectionalArrows(svg, groupId, opts) {
       const arrowsLayer = createSvgEl(svg.ownerDocument, 'g');
       arrowsLayer.setAttribute('class', 'direction-arrows');
 
-      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 2);
+      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 1.5);
 
       for (let d = margin; d < total - margin; d += opts.arrowSpacing) {
         let p0, p1, p2;
         try {
-          p0 = node.getPointAtLength(Math.max(0, d - 1));
+          p0 = node.getPointAtLength(Math.max(0, d - 1.5));
           p1 = node.getPointAtLength(d);
-          p2 = node.getPointAtLength(Math.min(total, d + 1));
+          p2 = node.getPointAtLength(Math.min(total, d + 1.5));
         } catch {
           continue;
         }
 
-        const angle = Math.atan2(p2.y - p0.y, p2.x - p0.x) * 180 / Math.PI;
+        const dx = p2.x - p0.x;
+        const dy = p2.y - p0.y;
+        const segLen = Math.hypot(dx, dy);
+
+        if (segLen < 0.01) continue;
+
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
         const use = createSvgEl(svg.ownerDocument, 'use');
         use.setAttribute('href', '#dirArrowSymbol');
@@ -229,30 +252,38 @@ function process(text, opts) {
       const parent = node.parentNode;
       const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
 
-      const base = normalizeTrackNode(node);
-      base.setAttribute('fill', 'none');
-      base.setAttribute('stroke-linecap', 'round');
-      base.setAttribute('stroke-linejoin', 'round');
-      base.setAttribute('vector-effect', 'non-scaling-stroke');
-      base.classList.add('styled-track-source');
-      base.setAttribute('stroke', 'none');
-      base.setAttribute('stroke-width', '0');
+      const visualBase = node.cloneNode(true);
+      visualBase.setAttribute('fill', 'none');
+      visualBase.setAttribute('stroke-linecap', 'round');
+      visualBase.setAttribute('stroke-linejoin', 'round');
+      visualBase.setAttribute('vector-effect', 'non-scaling-stroke');
+      visualBase.removeAttribute('marker-start');
+      visualBase.removeAttribute('marker-mid');
+      visualBase.removeAttribute('marker-end');
 
-      const outer = base.cloneNode(true);
-      outer.classList.remove('styled-track-source');
+      const outer = visualBase.cloneNode(true);
       outer.classList.add('styled-track-layer', 'styled-track-outer');
       outer.setAttribute('stroke', opts.outerColor);
       outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
 
-      const inner = base.cloneNode(true);
-      inner.classList.remove('styled-track-source');
+      const inner = visualBase.cloneNode(true);
       inner.classList.add('styled-track-layer', 'styled-track-inner');
       inner.setAttribute('stroke', opts.innerColor);
       inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
 
+      const geometry = makeGeometryPathFromNode(node);
+      if (geometry) {
+        geometry.classList.add('track-geometry-path');
+        geometry.setAttribute('fill', 'none');
+        geometry.setAttribute('stroke', 'none');
+        geometry.setAttribute('stroke-width', '0');
+        geometry.setAttribute('pointer-events', 'none');
+        geometry.setAttribute('aria-hidden', 'true');
+      }
+
       parent.insertBefore(outer, node);
       parent.insertBefore(inner, node);
-      parent.insertBefore(base, node);
+      if (geometry) parent.insertBefore(geometry, node);
       parent.removeChild(node);
     });
   });
