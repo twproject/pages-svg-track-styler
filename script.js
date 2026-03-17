@@ -45,9 +45,42 @@ function createSvgEl(doc, tag) {
   return doc.createElementNS(SVG_NS, tag);
 }
 
-function removeExtraSvgContent(svg) {
-  svg.querySelectorAll('text, title, desc, metadata, script').forEach(node => node.remove());
-  svg.querySelectorAll('[display="none"], [visibility="hidden"]').forEach(node => node.remove());
+function polylinePointsToPathD(pointsText) {
+  const pts = (pointsText || '')
+    .trim()
+    .split(/\s+/)
+    .map(p => p.split(',').map(Number))
+    .filter(p => p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+
+  if (!pts.length) return '';
+
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    d += ` L ${pts[i][0]} ${pts[i][1]}`;
+  }
+  return d;
+}
+
+function normalizeTrackNode(node) {
+  const tag = node.tagName.toLowerCase();
+
+  if (tag === 'path') {
+    return node.cloneNode(true);
+  }
+
+  if (tag === 'polyline') {
+    const path = createSvgEl(node.ownerDocument, 'path');
+    const d = polylinePointsToPathD(node.getAttribute('points'));
+    path.setAttribute('d', d);
+
+    for (const attr of node.attributes) {
+      if (attr.name === 'points') continue;
+      path.setAttribute(attr.name, attr.value);
+    }
+    return path;
+  }
+
+  return node.cloneNode(true);
 }
 
 function ensureArrowSymbol(svg, color) {
@@ -58,28 +91,55 @@ function ensureArrowSymbol(svg, color) {
   }
 
   let symbol = svg.querySelector('#dirArrowSymbol');
-  if (symbol) {
-    const existing = symbol.querySelector('polyline');
-    if (existing) existing.setAttribute('stroke', color);
-    return symbol;
+  if (!symbol) {
+    symbol = createSvgEl(svg.ownerDocument, 'symbol');
+    symbol.setAttribute('id', 'dirArrowSymbol');
+    symbol.setAttribute('viewBox', '-8 -6 16 12');
+
+    const chevron = createSvgEl(svg.ownerDocument, 'polyline');
+    chevron.setAttribute('points', '-6,4 0,-2 6,4');
+    chevron.setAttribute('fill', 'none');
+    chevron.setAttribute('stroke-width', '2.2');
+    chevron.setAttribute('stroke-linecap', 'round');
+    chevron.setAttribute('stroke-linejoin', 'round');
+
+    symbol.appendChild(chevron);
+    defs.appendChild(symbol);
   }
 
-  symbol = createSvgEl(svg.ownerDocument, 'symbol');
-  symbol.setAttribute('id', 'dirArrowSymbol');
-  symbol.setAttribute('viewBox', '-7 -5 14 10');
-
-  const chevron = createSvgEl(svg.ownerDocument, 'polyline');
-  chevron.setAttribute('points', '-6,4 0,-3 6,4');
-  chevron.setAttribute('fill', 'none');
-  chevron.setAttribute('stroke', color);
-  chevron.setAttribute('stroke-width', '2');
-  chevron.setAttribute('stroke-linecap', 'round');
-  chevron.setAttribute('stroke-linejoin', 'round');
-
-  symbol.appendChild(chevron);
-  defs.appendChild(symbol);
+  const chevron = symbol.querySelector('polyline');
+  if (chevron) {
+    chevron.setAttribute('stroke', color);
+  }
 
   return symbol;
+}
+
+function cleanSvgHard(svg, groupId) {
+  const allowedGroups = Array.from(svg.querySelectorAll(`g[id^='${groupId}']`));
+  if (!allowedGroups.length) {
+    throw new Error(`Group with id '${groupId}' not found.`);
+  }
+
+  const defs = svg.querySelector('defs');
+
+  Array.from(svg.childNodes).forEach(node => {
+    if (node.nodeType !== 1) return;
+
+    const isDefs = node.tagName && node.tagName.toLowerCase() === 'defs';
+    const isAllowedTrackGroup = allowedGroups.includes(node);
+
+    if (!isDefs && !isAllowedTrackGroup) {
+      node.remove();
+    }
+  });
+
+  svg.querySelectorAll('text, title, desc, metadata, script').forEach(node => node.remove());
+  svg.querySelectorAll('[display="none"], [visibility="hidden"]').forEach(node => node.remove());
+
+  if (!defs && !svg.querySelector('defs')) {
+    // nothing
+  }
 }
 
 function addDirectionalArrows(svg, groupId, opts) {
@@ -88,11 +148,11 @@ function addDirectionalArrows(svg, groupId, opts) {
   const groups = svg.querySelectorAll(`g[id^='${groupId}']`);
 
   groups.forEach(g => {
-    g.querySelectorAll('.direction-arrows').forEach(node => node.remove());
+    g.querySelectorAll('.direction-arrows').forEach(n => n.remove());
 
-    const nodes = g.querySelectorAll('polyline, path');
+    const geometryNodes = g.querySelectorAll('path.styled-track-inner, path.styled-track-source');
 
-    nodes.forEach(node => {
+    geometryNodes.forEach(node => {
       if (typeof node.getTotalLength !== 'function' || typeof node.getPointAtLength !== 'function') {
         return;
       }
@@ -100,37 +160,37 @@ function addDirectionalArrows(svg, groupId, opts) {
       let total;
       try {
         total = node.getTotalLength();
-      } catch (err) {
+      } catch {
         return;
       }
 
-      if (!isFinite(total) || total <= opts.arrowSpacing) {
+      if (!Number.isFinite(total) || total < opts.arrowSpacing * 2) {
         return;
       }
 
       const arrowsLayer = createSvgEl(svg.ownerDocument, 'g');
       arrowsLayer.setAttribute('class', 'direction-arrows');
 
-      const margin = Math.max(opts.arrowSpacing * 0.8, opts.arrowSize * 1.5);
+      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 2);
 
       for (let d = margin; d < total - margin; d += opts.arrowSpacing) {
-        let p, pPrev, pNext;
+        let p0, p1, p2;
         try {
-          p = node.getPointAtLength(d);
-          pPrev = node.getPointAtLength(Math.max(0, d - 0.75));
-          pNext = node.getPointAtLength(Math.min(total, d + 0.75));
-        } catch (err) {
+          p0 = node.getPointAtLength(Math.max(0, d - 1));
+          p1 = node.getPointAtLength(d);
+          p2 = node.getPointAtLength(Math.min(total, d + 1));
+        } catch {
           continue;
         }
 
-        const angle = Math.atan2(pNext.y - pPrev.y, pNext.x - pPrev.x) * 180 / Math.PI;
+        const angle = Math.atan2(p2.y - p0.y, p2.x - p0.x) * 180 / Math.PI;
 
         const use = createSvgEl(svg.ownerDocument, 'use');
         use.setAttribute('href', '#dirArrowSymbol');
         use.setAttributeNS(XLINK_NS, 'xlink:href', '#dirArrowSymbol');
         use.setAttribute(
           'transform',
-          `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${(opts.arrowSize / 12).toFixed(3)})`
+          `translate(${p1.x.toFixed(2)} ${p1.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${(opts.arrowSize / 10).toFixed(3)})`
         );
 
         arrowsLayer.appendChild(use);
@@ -142,79 +202,98 @@ function addDirectionalArrows(svg, groupId, opts) {
 }
 
 function process(text, opts) {
-  const temp = document.createElement('div');
-  temp.style.position = 'fixed';
-  temp.style.left = '-100000px';
-  temp.style.top = '-100000px';
-  temp.style.visibility = 'hidden';
-  temp.innerHTML = text;
-  document.body.appendChild(temp);
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(text, 'image/svg+xml');
+  const svg = xml.documentElement;
 
-  try {
-    const svg = temp.querySelector('svg');
-    if (!svg) throw new Error('Invalid SVG file.');
+  if (!svg || svg.tagName.toLowerCase() !== 'svg') {
+    throw new Error('Invalid SVG file.');
+  }
 
-    const groups = svg.querySelectorAll(`g[id^='${opts.groupId}']`);
-    if (!groups.length) throw new Error(`Group with id '${opts.groupId}' not found.`);
+  const parserError = xml.querySelector('parsererror');
+  if (parserError) {
+    throw new Error('SVG parsing error.');
+  }
 
-    groups.forEach(g => {
-      const paths = g.querySelectorAll('polyline, path');
+  const groups = svg.querySelectorAll(`g[id^='${opts.groupId}']`);
+  if (!groups.length) {
+    throw new Error(`Group with id '${opts.groupId}' not found.`);
+  }
 
-      paths.forEach(node => {
-        if (node.classList && node.classList.contains('styled-track-layer')) return;
-        if (node.closest('.direction-arrows')) return;
+  groups.forEach(g => {
+    const nodes = Array.from(g.querySelectorAll('polyline, path'));
 
-        const parent = node.parentNode;
-        const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
+    nodes.forEach(node => {
+      if (node.closest('.direction-arrows')) return;
 
-        const outer = node.cloneNode(true);
-        outer.setAttribute('stroke', opts.outerColor);
-        outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
-        outer.setAttribute('fill', 'none');
-        outer.setAttribute('stroke-linecap', 'round');
-        outer.setAttribute('stroke-linejoin', 'round');
-        outer.setAttribute('vector-effect', 'non-scaling-stroke');
-        outer.classList.add('styled-track-layer', 'styled-track-outer');
+      const parent = node.parentNode;
+      const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
 
-        const inner = node.cloneNode(true);
-        inner.setAttribute('stroke', opts.innerColor);
-        inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
-        inner.setAttribute('fill', 'none');
-        inner.setAttribute('stroke-linecap', 'round');
-        inner.setAttribute('stroke-linejoin', 'round');
-        inner.setAttribute('vector-effect', 'non-scaling-stroke');
-        inner.classList.add('styled-track-layer', 'styled-track-inner');
+      const base = normalizeTrackNode(node);
+      base.setAttribute('fill', 'none');
+      base.setAttribute('stroke-linecap', 'round');
+      base.setAttribute('stroke-linejoin', 'round');
+      base.setAttribute('vector-effect', 'non-scaling-stroke');
+      base.classList.add('styled-track-source');
+      base.setAttribute('stroke', 'none');
+      base.setAttribute('stroke-width', '0');
 
-        parent.insertBefore(outer, node);
-        parent.insertBefore(inner, node);
-        parent.removeChild(node);
-      });
+      const outer = base.cloneNode(true);
+      outer.classList.remove('styled-track-source');
+      outer.classList.add('styled-track-layer', 'styled-track-outer');
+      outer.setAttribute('stroke', opts.outerColor);
+      outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
+
+      const inner = base.cloneNode(true);
+      inner.classList.remove('styled-track-source');
+      inner.classList.add('styled-track-layer', 'styled-track-inner');
+      inner.setAttribute('stroke', opts.innerColor);
+      inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
+
+      parent.insertBefore(outer, node);
+      parent.insertBefore(inner, node);
+      parent.insertBefore(base, node);
+      parent.removeChild(node);
     });
+  });
 
-    if (opts.noWatermark) {
-      svg.querySelectorAll('text').forEach(t => {
-        if (/created by/i.test(t.textContent)) t.remove();
-      });
-    }
+  if (opts.noWatermark) {
+    svg.querySelectorAll('text').forEach(t => {
+      if (/created by/i.test(t.textContent || '')) {
+        t.remove();
+      }
+    });
+  }
 
-    if (opts.keepMapOnly) {
-      removeExtraSvgContent(svg);
-    }
+  if (opts.keepMapOnly) {
+    cleanSvgHard(svg, opts.groupId);
+  }
 
-    if (opts.directionArrows) {
-      addDirectionalArrows(svg, opts.groupId, {
+  if (opts.directionArrows) {
+    const tempWrap = document.createElement('div');
+    tempWrap.style.position = 'fixed';
+    tempWrap.style.left = '-10000px';
+    tempWrap.style.top = '-10000px';
+    tempWrap.style.visibility = 'hidden';
+    document.body.appendChild(tempWrap);
+
+    try {
+      tempWrap.appendChild(document.importNode(svg, true));
+      const liveSvg = tempWrap.querySelector('svg');
+
+      addDirectionalArrows(liveSvg, opts.groupId, {
         arrowColor: opts.arrowColor || opts.innerColor || '#ffffff',
         arrowSpacing: opts.arrowSpacing || 28,
         arrowSize: opts.arrowSize || 8
       });
-    } else {
-      svg.querySelectorAll('.direction-arrows').forEach(node => node.remove());
-    }
 
-    return serializeSvg(svg);
-  } finally {
-    temp.remove();
+      return serializeSvg(liveSvg);
+    } finally {
+      tempWrap.remove();
+    }
   }
+
+  return serializeSvg(svg);
 }
 
 function updatePreview() {
