@@ -77,50 +77,47 @@ function parsePolylinePoints(pointsText) {
     const x = nums[i];
     const y = nums[i + 1];
     if (Number.isFinite(x) && Number.isFinite(y)) {
-      pts.push([x, y]);
+      pts.push({ x, y });
     }
   }
 
   return pts;
 }
 
-function polylineToPathD(pointsText) {
-  const pts = parsePolylinePoints(pointsText);
-  if (pts.length < 2) return '';
-
-  let d = `M ${pts[0][0]} ${pts[0][1]}`;
-  for (let i = 1; i < pts.length; i++) {
-    d += ` L ${pts[i][0]} ${pts[i][1]}`;
-  }
-  return d;
+function dist(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function buildGeometryPathFromNode(node) {
-  const tag = node.tagName.toLowerCase();
+function pointAtDistance(points, target) {
+  if (!points.length) return null;
+  if (target <= 0) return { ...points[0] };
 
-  if (tag === 'path') {
-    const p = node.cloneNode(true);
-    p.removeAttribute('marker-start');
-    p.removeAttribute('marker-mid');
-    p.removeAttribute('marker-end');
-    p.setAttribute('fill', 'none');
-    return p;
+  let acc = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const seg = dist(a, b);
+    if (seg <= 1e-9) continue;
+
+    if (acc + seg >= target) {
+      const t = (target - acc) / seg;
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t
+      };
+    }
+    acc += seg;
   }
 
-  if (tag === 'polyline') {
-    const d = polylineToPathD(node.getAttribute('points'));
-    if (!d) return null;
+  return { ...points[points.length - 1] };
+}
 
-    const p = createSvgEl(node.ownerDocument, 'path');
-    p.setAttribute('d', d);
-    p.setAttribute('fill', 'none');
-    p.removeAttribute('marker-start');
-    p.removeAttribute('marker-mid');
-    p.removeAttribute('marker-end');
-    return p;
+function totalLength(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    len += dist(points[i - 1], points[i]);
   }
-
-  return null;
+  return len;
 }
 
 function ensureArrowSymbol(svg, color, size) {
@@ -149,7 +146,7 @@ function ensureArrowSymbol(svg, color, size) {
   const chev = symbol.querySelector('polyline');
   if (chev) {
     chev.setAttribute('stroke', color);
-    chev.setAttribute('stroke-width', String(Math.max(1.4, size * 0.18)));
+    chev.setAttribute('stroke-width', String(Math.max(1.2, size * 0.18)));
   }
 
   return symbol;
@@ -163,86 +160,61 @@ function addDirectionalArrows(svg, groupId, opts) {
   groups.forEach(g => {
     g.querySelectorAll('.direction-arrows').forEach(n => n.remove());
 
-    const trackNodes = g.querySelectorAll('polyline.styled-track-inner, path.styled-track-inner');
+    const originalTrackNodes = Array.from(g.querySelectorAll('polyline, path')).filter(node => {
+      return (
+        !node.classList.contains('styled-track-outer') &&
+        !node.classList.contains('styled-track-inner') &&
+        !node.closest('.direction-arrows')
+      );
+    });
 
-    trackNodes.forEach(node => {
-      const geomPath = buildGeometryPathFromNode(node);
-      if (!geomPath) return;
+    const arrowsLayer = createSvgEl(svg.ownerDocument, 'g');
+    arrowsLayer.setAttribute('class', 'direction-arrows');
+    arrowsLayer.setAttribute('pointer-events', 'none');
 
-      geomPath.setAttribute('stroke', 'none');
-      geomPath.setAttribute('stroke-width', '0');
-      geomPath.setAttribute('pointer-events', 'none');
-      geomPath.style.position = 'absolute';
+    originalTrackNodes.forEach(node => {
+      const tag = node.tagName.toLowerCase();
+      if (tag !== 'polyline') return;
 
-      const tempWrap = document.createElement('div');
-      tempWrap.style.position = 'fixed';
-      tempWrap.style.left = '-10000px';
-      tempWrap.style.top = '-10000px';
-      tempWrap.style.visibility = 'hidden';
-      document.body.appendChild(tempWrap);
+      const pts = parsePolylinePoints(node.getAttribute('points'));
+      if (pts.length < 2) return;
 
-      try {
-        const tempSvg = createSvgEl(document, 'svg');
-        tempSvg.setAttribute('xmlns', SVG_NS);
-        tempSvg.appendChild(geomPath);
-        tempWrap.appendChild(tempSvg);
+      const len = totalLength(pts);
+      if (!Number.isFinite(len) || len < opts.arrowSpacing * 2) return;
 
-        if (typeof geomPath.getTotalLength !== 'function' || typeof geomPath.getPointAtLength !== 'function') {
-          return;
-        }
+      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 1.5);
+      const tangentDelta = Math.max(2, opts.arrowSize * 0.35);
+      const scale = Math.max(0.35, opts.arrowSize / 10);
 
-        let total;
-        try {
-          total = geomPath.getTotalLength();
-        } catch {
-          return;
-        }
+      for (let d = margin; d < len - margin; d += opts.arrowSpacing) {
+        const p0 = pointAtDistance(pts, Math.max(0, d - tangentDelta));
+        const p1 = pointAtDistance(pts, d);
+        const p2 = pointAtDistance(pts, Math.min(len, d + tangentDelta));
 
-        if (!Number.isFinite(total) || total < opts.arrowSpacing * 2) {
-          return;
-        }
+        if (!p0 || !p1 || !p2) continue;
 
-        const arrowsLayer = createSvgEl(svg.ownerDocument, 'g');
-        arrowsLayer.setAttribute('class', 'direction-arrows');
-        arrowsLayer.setAttribute('pointer-events', 'none');
+        const dx = p2.x - p0.x;
+        const dy = p2.y - p0.y;
+        const segLen = Math.hypot(dx, dy);
+        if (segLen < 0.01) continue;
 
-        const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 1.5);
-        const tangentDelta = Math.max(2, opts.arrowSize * 0.35);
-        const scale = Math.max(0.35, opts.arrowSize / 10);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
-        for (let d = margin; d < total - margin; d += opts.arrowSpacing) {
-          let p0, p1, p2;
-          try {
-            p0 = geomPath.getPointAtLength(Math.max(0, d - tangentDelta));
-            p1 = geomPath.getPointAtLength(d);
-            p2 = geomPath.getPointAtLength(Math.min(total, d + tangentDelta));
-          } catch {
-            continue;
-          }
+        const use = createSvgEl(svg.ownerDocument, 'use');
+        use.setAttribute('href', '#dirArrowSymbol');
+        use.setAttributeNS(XLINK_NS, 'xlink:href', '#dirArrowSymbol');
+        use.setAttribute(
+          'transform',
+          `translate(${p1.x.toFixed(2)} ${p1.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${scale.toFixed(3)})`
+        );
 
-          const dx = p2.x - p0.x;
-          const dy = p2.y - p0.y;
-          const len = Math.hypot(dx, dy);
-          if (len < 0.01) continue;
-
-          const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-
-          const use = createSvgEl(svg.ownerDocument, 'use');
-          use.setAttribute('href', '#dirArrowSymbol');
-          use.setAttributeNS(XLINK_NS, 'xlink:href', '#dirArrowSymbol');
-          use.setAttribute(
-            'transform',
-            `translate(${p1.x.toFixed(2)} ${p1.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${scale.toFixed(3)})`
-          );
-
-          arrowsLayer.appendChild(use);
-        }
-
-        g.appendChild(arrowsLayer);
-      } finally {
-        tempWrap.remove();
+        arrowsLayer.appendChild(use);
       }
     });
+
+    if (arrowsLayer.childNodes.length) {
+      g.appendChild(arrowsLayer);
+    }
   });
 }
 
@@ -265,42 +237,6 @@ function process(text, opts) {
     throw new Error(`Group with id '${opts.groupId}' not found.`);
   }
 
-  groups.forEach(g => {
-    const nodes = Array.from(g.querySelectorAll('polyline, path'));
-
-    nodes.forEach(node => {
-      if (node.classList.contains('styled-track-outer')) return;
-      if (node.classList.contains('styled-track-inner')) return;
-      if (node.closest('.direction-arrows')) return;
-
-      const parent = node.parentNode;
-      const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
-
-      const visualBase = node.cloneNode(true);
-      visualBase.setAttribute('fill', 'none');
-      visualBase.setAttribute('stroke-linecap', 'round');
-      visualBase.setAttribute('stroke-linejoin', 'round');
-      visualBase.setAttribute('vector-effect', 'non-scaling-stroke');
-      visualBase.removeAttribute('marker-start');
-      visualBase.removeAttribute('marker-mid');
-      visualBase.removeAttribute('marker-end');
-
-      const outer = visualBase.cloneNode(true);
-      outer.classList.add('styled-track-layer', 'styled-track-outer');
-      outer.setAttribute('stroke', opts.outerColor);
-      outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
-
-      const inner = visualBase.cloneNode(true);
-      inner.classList.add('styled-track-layer', 'styled-track-inner');
-      inner.setAttribute('stroke', opts.innerColor);
-      inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
-
-      parent.insertBefore(outer, node);
-      parent.insertBefore(inner, node);
-      parent.removeChild(node);
-    });
-  });
-
   if (opts.noWatermark) {
     svg.querySelectorAll('text').forEach(t => {
       if (/created by/i.test(t.textContent || '')) {
@@ -314,28 +250,58 @@ function process(text, opts) {
   }
 
   if (opts.directionArrows) {
-    const tempWrap = document.createElement('div');
-    tempWrap.style.position = 'fixed';
-    tempWrap.style.left = '-10000px';
-    tempWrap.style.top = '-10000px';
-    tempWrap.style.visibility = 'hidden';
-    document.body.appendChild(tempWrap);
-
-    try {
-      tempWrap.appendChild(document.importNode(svg, true));
-      const liveSvg = tempWrap.querySelector('svg');
-
-      addDirectionalArrows(liveSvg, opts.groupId, {
-        arrowColor: opts.outerColor || '#ff0000',
-        arrowSpacing: parseFloat(opts.arrowSpacing) || 28,
-        arrowSize: parseFloat(opts.arrowSize) || 8
-      });
-
-      return serializeSvg(liveSvg);
-    } finally {
-      tempWrap.remove();
-    }
+    addDirectionalArrows(svg, opts.groupId, {
+      arrowColor: opts.outerColor || '#ff0000',
+      arrowSpacing: parseFloat(opts.arrowSpacing) || 28,
+      arrowSize: parseFloat(opts.arrowSize) || 8
+    });
+  } else {
+    svg.querySelectorAll('.direction-arrows').forEach(n => n.remove());
   }
+
+  const styledGroups = svg.querySelectorAll(`g[id^='${opts.groupId}']`);
+  styledGroups.forEach(g => {
+    const nodes = Array.from(g.querySelectorAll('polyline, path')).filter(node => {
+      return (
+        !node.classList.contains('styled-track-outer') &&
+        !node.classList.contains('styled-track-inner') &&
+        !node.closest('.direction-arrows')
+      );
+    });
+
+    nodes.forEach(node => {
+      const parent = node.parentNode;
+      const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
+
+      const outer = node.cloneNode(true);
+      outer.classList.add('styled-track-layer', 'styled-track-outer');
+      outer.setAttribute('fill', 'none');
+      outer.setAttribute('stroke', opts.outerColor);
+      outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
+      outer.setAttribute('stroke-linecap', 'round');
+      outer.setAttribute('stroke-linejoin', 'round');
+      outer.setAttribute('vector-effect', 'non-scaling-stroke');
+      outer.removeAttribute('marker-start');
+      outer.removeAttribute('marker-mid');
+      outer.removeAttribute('marker-end');
+
+      const inner = node.cloneNode(true);
+      inner.classList.add('styled-track-layer', 'styled-track-inner');
+      inner.setAttribute('fill', 'none');
+      inner.setAttribute('stroke', opts.innerColor);
+      inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
+      inner.setAttribute('stroke-linecap', 'round');
+      inner.setAttribute('stroke-linejoin', 'round');
+      inner.setAttribute('vector-effect', 'non-scaling-stroke');
+      inner.removeAttribute('marker-start');
+      inner.removeAttribute('marker-mid');
+      inner.removeAttribute('marker-end');
+
+      parent.insertBefore(outer, node);
+      parent.insertBefore(inner, node);
+      parent.removeChild(node);
+    });
+  });
 
   return serializeSvg(svg);
 }
@@ -353,7 +319,6 @@ function updatePreview() {
       noWatermark: els.noWatermark.checked,
       keepMapOnly: els.keepMapOnly.checked,
       directionArrows: els.directionArrows.checked,
-      arrowColor: els.outerColor.value.trim() || '#ff0000',
       arrowSpacing: parseFloat(els.arrowSpacing.value) || 28,
       arrowSize: parseFloat(els.arrowSize.value) || 8
     });
