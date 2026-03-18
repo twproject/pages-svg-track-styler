@@ -3,7 +3,6 @@ let lastUrl = null;
 let zoom = 1;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
 const els = {
   file: document.getElementById('inputSvg'),
@@ -46,7 +45,7 @@ function createSvgEl(doc, tag) {
 }
 
 function cleanSvgHard(svg, groupId) {
-  const allowedGroups = Array.from(svg.querySelectorAll(`g[id^='${groupId}']`));
+  const allowedGroups = Array.from(svg.querySelectorAll(`g[id='${groupId}']`));
   if (!allowedGroups.length) {
     throw new Error(`Group with id '${groupId}' not found.`);
   }
@@ -84,8 +83,16 @@ function parsePolylinePoints(pointsText) {
   return pts;
 }
 
-function dist(a, b) {
+function segLen(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function polylineLength(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    len += segLen(points[i - 1], points[i]);
+  }
+  return len;
 }
 
 function pointAtDistance(points, target) {
@@ -93,128 +100,170 @@ function pointAtDistance(points, target) {
   if (target <= 0) return { ...points[0] };
 
   let acc = 0;
+
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1];
     const b = points[i];
-    const seg = dist(a, b);
-    if (seg <= 1e-9) continue;
+    const s = segLen(a, b);
+    if (s <= 1e-9) continue;
 
-    if (acc + seg >= target) {
-      const t = (target - acc) / seg;
+    if (acc + s >= target) {
+      const t = (target - acc) / s;
       return {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t
       };
     }
-    acc += seg;
+
+    acc += s;
   }
 
   return { ...points[points.length - 1] };
 }
 
-function totalLength(points) {
-  let len = 0;
-  for (let i = 1; i < points.length; i++) {
-    len += dist(points[i - 1], points[i]);
-  }
-  return len;
+function tangentAtDistance(points, d, delta) {
+  const p0 = pointAtDistance(points, Math.max(0, d - delta));
+  const p1 = pointAtDistance(points, Math.min(polylineLength(points), d + delta));
+
+  if (!p0 || !p1) return null;
+
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  const len = Math.hypot(dx, dy);
+
+  if (len < 1e-9) return null;
+
+  return {
+    x: dx / len,
+    y: dy / len
+  };
 }
 
-function ensureArrowSymbol(svg, color, size) {
-  let defs = svg.querySelector('defs');
-  if (!defs) {
-    defs = createSvgEl(svg.ownerDocument, 'defs');
-    svg.insertBefore(defs, svg.firstChild);
-  }
+function makeChevronPoints(center, tangent, size) {
+  const tx = tangent.x;
+  const ty = tangent.y;
 
-  let symbol = svg.querySelector('#dirArrowSymbol');
-  if (!symbol) {
-    symbol = createSvgEl(svg.ownerDocument, 'symbol');
-    symbol.setAttribute('id', 'dirArrowSymbol');
-    symbol.setAttribute('viewBox', '-10 -10 20 20');
+  const nx = -ty;
+  const ny = tx;
 
-    const chev = createSvgEl(svg.ownerDocument, 'polyline');
-    chev.setAttribute('points', '-6,4 0,-3 6,4');
-    chev.setAttribute('fill', 'none');
-    chev.setAttribute('stroke-linecap', 'round');
-    chev.setAttribute('stroke-linejoin', 'round');
+  const back = size * 0.9;
+  const half = size * 0.55;
+  const tipForward = size * 0.55;
 
-    symbol.appendChild(chev);
-    defs.appendChild(symbol);
-  }
+  const left = {
+    x: center.x - tx * back - nx * half,
+    y: center.y - ty * back - ny * half
+  };
 
-  const chev = symbol.querySelector('polyline');
-  if (chev) {
-    chev.setAttribute('stroke', color);
-    chev.setAttribute('stroke-width', String(Math.max(1.2, size * 0.18)));
-  }
+  const tip = {
+    x: center.x + tx * tipForward,
+    y: center.y + ty * tipForward
+  };
 
-  return symbol;
+  const right = {
+    x: center.x - tx * back + nx * half,
+    y: center.y - ty * back + ny * half
+  };
+
+  return `${left.x.toFixed(2)},${left.y.toFixed(2)} ${tip.x.toFixed(2)},${tip.y.toFixed(2)} ${right.x.toFixed(2)},${right.y.toFixed(2)}`;
 }
 
 function addDirectionalArrows(svg, groupId, opts) {
-  ensureArrowSymbol(svg, opts.arrowColor, opts.arrowSize);
-
-  const groups = svg.querySelectorAll(`g[id^='${groupId}']`);
+  const groups = svg.querySelectorAll(`g[id='${groupId}']`);
 
   groups.forEach(g => {
     g.querySelectorAll('.direction-arrows').forEach(n => n.remove());
 
-    const originalTrackNodes = Array.from(g.querySelectorAll('polyline, path')).filter(node => {
+    const originalPolylines = Array.from(g.querySelectorAll(`polyline[id^='${groupId}:']`)).filter(node => {
       return (
         !node.classList.contains('styled-track-outer') &&
-        !node.classList.contains('styled-track-inner') &&
-        !node.closest('.direction-arrows')
+        !node.classList.contains('styled-track-inner')
       );
     });
+
+    if (!originalPolylines.length) return;
 
     const arrowsLayer = createSvgEl(svg.ownerDocument, 'g');
     arrowsLayer.setAttribute('class', 'direction-arrows');
     arrowsLayer.setAttribute('pointer-events', 'none');
 
-    originalTrackNodes.forEach(node => {
-      const tag = node.tagName.toLowerCase();
-      if (tag !== 'polyline') return;
-
+    originalPolylines.forEach(node => {
       const pts = parsePolylinePoints(node.getAttribute('points'));
       if (pts.length < 2) return;
 
-      const len = totalLength(pts);
-      if (!Number.isFinite(len) || len < opts.arrowSpacing * 2) return;
+      const total = polylineLength(pts);
+      if (!Number.isFinite(total) || total <= opts.arrowSpacing * 1.5) return;
 
-      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 1.5);
-      const tangentDelta = Math.max(2, opts.arrowSize * 0.35);
-      const scale = Math.max(0.35, opts.arrowSize / 10);
+      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 2.0);
+      const tangentDelta = Math.max(2, opts.arrowSize * 0.6);
 
-      for (let d = margin; d < len - margin; d += opts.arrowSpacing) {
-        const p0 = pointAtDistance(pts, Math.max(0, d - tangentDelta));
-        const p1 = pointAtDistance(pts, d);
-        const p2 = pointAtDistance(pts, Math.min(len, d + tangentDelta));
+      for (let d = margin; d < total - margin; d += opts.arrowSpacing) {
+        const center = pointAtDistance(pts, d);
+        const tangent = tangentAtDistance(pts, d, tangentDelta);
 
-        if (!p0 || !p1 || !p2) continue;
+        if (!center || !tangent) continue;
 
-        const dx = p2.x - p0.x;
-        const dy = p2.y - p0.y;
-        const segLen = Math.hypot(dx, dy);
-        if (segLen < 0.01) continue;
+        const chev = createSvgEl(svg.ownerDocument, 'polyline');
+        chev.setAttribute('class', 'direction-arrow');
+        chev.setAttribute('points', makeChevronPoints(center, tangent, opts.arrowSize));
+        chev.setAttribute('fill', 'none');
+        chev.setAttribute('stroke', opts.arrowColor);
+        chev.setAttribute('stroke-width', String(Math.max(1.2, opts.arrowSize * 0.22)));
+        chev.setAttribute('stroke-linecap', 'round');
+        chev.setAttribute('stroke-linejoin', 'round');
+        chev.setAttribute('vector-effect', 'non-scaling-stroke');
 
-        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-
-        const use = createSvgEl(svg.ownerDocument, 'use');
-        use.setAttribute('href', '#dirArrowSymbol');
-        use.setAttributeNS(XLINK_NS, 'xlink:href', '#dirArrowSymbol');
-        use.setAttribute(
-          'transform',
-          `translate(${p1.x.toFixed(2)} ${p1.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${scale.toFixed(3)})`
-        );
-
-        arrowsLayer.appendChild(use);
+        arrowsLayer.appendChild(chev);
       }
     });
 
     if (arrowsLayer.childNodes.length) {
       g.appendChild(arrowsLayer);
     }
+  });
+}
+
+function styleTrack(svg, groupId, opts) {
+  const groups = svg.querySelectorAll(`g[id='${groupId}']`);
+
+  groups.forEach(g => {
+    g.querySelectorAll('.styled-track-outer, .styled-track-inner').forEach(n => n.remove());
+
+    const originalPolylines = Array.from(g.querySelectorAll(`polyline[id^='${groupId}:']`)).filter(node => {
+      return (
+        !node.classList.contains('styled-track-outer') &&
+        !node.classList.contains('styled-track-inner') &&
+        !node.classList.contains('direction-arrow') &&
+        !node.closest('.direction-arrows')
+      );
+    });
+
+    originalPolylines.forEach(node => {
+      const parent = node.parentNode;
+      const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
+
+      const outer = node.cloneNode(true);
+      outer.classList.add('styled-track-outer');
+      outer.setAttribute('fill', 'none');
+      outer.setAttribute('stroke', opts.outerColor);
+      outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
+      outer.setAttribute('stroke-linecap', 'round');
+      outer.setAttribute('stroke-linejoin', 'round');
+      outer.setAttribute('vector-effect', 'non-scaling-stroke');
+
+      const inner = node.cloneNode(true);
+      inner.classList.add('styled-track-inner');
+      inner.setAttribute('fill', 'none');
+      inner.setAttribute('stroke', opts.innerColor);
+      inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
+      inner.setAttribute('stroke-linecap', 'round');
+      inner.setAttribute('stroke-linejoin', 'round');
+      inner.setAttribute('vector-effect', 'non-scaling-stroke');
+
+      parent.insertBefore(outer, node);
+      parent.insertBefore(inner, node);
+      parent.removeChild(node);
+    });
   });
 }
 
@@ -232,7 +281,7 @@ function process(text, opts) {
     throw new Error('SVG parsing error.');
   }
 
-  const groups = svg.querySelectorAll(`g[id^='${opts.groupId}']`);
+  const groups = svg.querySelectorAll(`g[id='${opts.groupId}']`);
   if (!groups.length) {
     throw new Error(`Group with id '${opts.groupId}' not found.`);
   }
@@ -251,7 +300,7 @@ function process(text, opts) {
 
   if (opts.directionArrows) {
     addDirectionalArrows(svg, opts.groupId, {
-      arrowColor: opts.outerColor || '#ff0000',
+      arrowColor: opts.outerColor,
       arrowSpacing: parseFloat(opts.arrowSpacing) || 28,
       arrowSize: parseFloat(opts.arrowSize) || 8
     });
@@ -259,49 +308,7 @@ function process(text, opts) {
     svg.querySelectorAll('.direction-arrows').forEach(n => n.remove());
   }
 
-  const styledGroups = svg.querySelectorAll(`g[id^='${opts.groupId}']`);
-  styledGroups.forEach(g => {
-    const nodes = Array.from(g.querySelectorAll('polyline, path')).filter(node => {
-      return (
-        !node.classList.contains('styled-track-outer') &&
-        !node.classList.contains('styled-track-inner') &&
-        !node.closest('.direction-arrows')
-      );
-    });
-
-    nodes.forEach(node => {
-      const parent = node.parentNode;
-      const w = parseFloat(node.getAttribute('stroke-width')) || 3.0;
-
-      const outer = node.cloneNode(true);
-      outer.classList.add('styled-track-layer', 'styled-track-outer');
-      outer.setAttribute('fill', 'none');
-      outer.setAttribute('stroke', opts.outerColor);
-      outer.setAttribute('stroke-width', (w * opts.outerFactor).toFixed(3));
-      outer.setAttribute('stroke-linecap', 'round');
-      outer.setAttribute('stroke-linejoin', 'round');
-      outer.setAttribute('vector-effect', 'non-scaling-stroke');
-      outer.removeAttribute('marker-start');
-      outer.removeAttribute('marker-mid');
-      outer.removeAttribute('marker-end');
-
-      const inner = node.cloneNode(true);
-      inner.classList.add('styled-track-layer', 'styled-track-inner');
-      inner.setAttribute('fill', 'none');
-      inner.setAttribute('stroke', opts.innerColor);
-      inner.setAttribute('stroke-width', (w * opts.innerFactor).toFixed(3));
-      inner.setAttribute('stroke-linecap', 'round');
-      inner.setAttribute('stroke-linejoin', 'round');
-      inner.setAttribute('vector-effect', 'non-scaling-stroke');
-      inner.removeAttribute('marker-start');
-      inner.removeAttribute('marker-mid');
-      inner.removeAttribute('marker-end');
-
-      parent.insertBefore(outer, node);
-      parent.insertBefore(inner, node);
-      parent.removeChild(node);
-    });
-  });
+  styleTrack(svg, opts.groupId, opts);
 
   return serializeSvg(svg);
 }
