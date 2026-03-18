@@ -3,8 +3,7 @@ let lastUrl = null;
 let zoom = 1;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const XLINK_NS = 'http://www.w3.org/1999/xlink';
-const SETTINGS_KEY = 'svg-track-styler-settings-v2';
+const SETTINGS_KEY = 'svg-track-styler-settings-v3';
 
 const els = {
   file: document.getElementById('inputSvg'),
@@ -211,56 +210,6 @@ function tangentAtDistance(points, totalLen, d, delta) {
   };
 }
 
-function ensureArrowBoxSymbol(svg, opts) {
-  let defs = svg.querySelector('defs');
-  if (!defs) {
-    defs = createSvgEl(svg.ownerDocument, 'defs');
-    svg.insertBefore(defs, svg.firstChild);
-  }
-
-  let symbol = svg.querySelector('#dirArrowBoxSymbol');
-  if (!symbol) {
-    symbol = createSvgEl(svg.ownerDocument, 'symbol');
-    symbol.setAttribute('id', 'dirArrowBoxSymbol');
-    symbol.setAttribute('viewBox', '0 0 24 24');
-
-    const rect = createSvgEl(svg.ownerDocument, 'rect');
-    rect.setAttribute('x', '3');
-    rect.setAttribute('y', '3');
-    rect.setAttribute('width', '18');
-    rect.setAttribute('height', '18');
-    rect.setAttribute('rx', '3');
-    rect.setAttribute('ry', '3');
-
-    const path = createSvgEl(svg.ownerDocument, 'path');
-    path.setAttribute('d', 'M8 12H15M12 9L15 12L12 15');
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-
-    symbol.appendChild(rect);
-    symbol.appendChild(path);
-    defs.appendChild(symbol);
-  }
-
-  const rect = symbol.querySelector('rect');
-  const path = symbol.querySelector('path');
-
-  if (rect) {
-    rect.setAttribute('fill', opts.boxFill || '#ffffff');
-    rect.setAttribute('fill-opacity', String(opts.boxFillOpacity ?? 0.92));
-    rect.setAttribute('stroke', opts.arrowColor || '#ff0000');
-    rect.setAttribute('stroke-width', '1.8');
-  }
-
-  if (path) {
-    path.setAttribute('stroke', opts.arrowColor || '#ff0000');
-    path.setAttribute('stroke-width', '2');
-  }
-
-  return symbol;
-}
-
 function getOriginalTrackPolylines(group, groupId) {
   const direct = Array.from(group.querySelectorAll(`polyline[id^='${groupId}:']`)).filter(node => {
     return (
@@ -276,15 +225,41 @@ function getOriginalTrackPolylines(group, groupId) {
     return (
       !node.classList.contains('styled-track-outer') &&
       !node.classList.contains('styled-track-inner') &&
-      !node.classList.contains('direction-arrow') &&
       !node.closest('.direction-arrows')
     );
   });
 }
 
-function addDirectionalArrows(svg, groupId, opts) {
-  ensureArrowBoxSymbol(svg, opts);
+function buildArrowBox(doc, opts) {
+  const g = createSvgEl(doc, 'g');
+  g.setAttribute('class', 'direction-arrow');
 
+  const rect = createSvgEl(doc, 'rect');
+  rect.setAttribute('x', '-9');
+  rect.setAttribute('y', '-9');
+  rect.setAttribute('width', '18');
+  rect.setAttribute('height', '18');
+  rect.setAttribute('rx', '3');
+  rect.setAttribute('ry', '3');
+  rect.setAttribute('fill', opts.boxFill || '#ffffff');
+  rect.setAttribute('fill-opacity', String(opts.boxFillOpacity ?? 0.92));
+  rect.setAttribute('stroke', opts.arrowColor || '#ff0000');
+  rect.setAttribute('stroke-width', '1.8');
+
+  const path = createSvgEl(doc, 'path');
+  path.setAttribute('d', 'M-4 0H4M1 -3L4 0L1 3');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', opts.arrowColor || '#ff0000');
+  path.setAttribute('stroke-width', '2');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+
+  g.appendChild(rect);
+  g.appendChild(path);
+  return g;
+}
+
+function addDirectionalArrows(svg, groupId, opts) {
   const groups = svg.querySelectorAll(`g[id='${groupId}']`);
 
   groups.forEach(g => {
@@ -306,6 +281,7 @@ function addDirectionalArrows(svg, groupId, opts) {
 
       const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 2.5);
       const tangentDelta = Math.max(2, opts.arrowSize * 0.8);
+      const scale = Math.max(0.45, opts.arrowSize / 7);
 
       for (let d = margin; d < total - margin; d += opts.arrowSpacing) {
         const center = pointAtDistance(pts, d);
@@ -314,17 +290,13 @@ function addDirectionalArrows(svg, groupId, opts) {
         if (!center || !tangent) continue;
 
         const angle = Math.atan2(tangent.y, tangent.x) * 180 / Math.PI;
-        const scale = Math.max(0.32, opts.arrowSize / 12);
-
-        const use = createSvgEl(svg.ownerDocument, 'use');
-        use.setAttribute('href', '#dirArrowBoxSymbol');
-        use.setAttributeNS(XLINK_NS, 'xlink:href', '#dirArrowBoxSymbol');
-        use.setAttribute(
+        const arrow = buildArrowBox(svg.ownerDocument, opts);
+        arrow.setAttribute(
           'transform',
-          `translate(${center.x.toFixed(2)} ${center.y.toFixed(2)}) rotate(${angle.toFixed(2)}) translate(-12 -12) scale(${scale.toFixed(3)})`
+          `translate(${center.x.toFixed(2)} ${center.y.toFixed(2)}) rotate(${angle.toFixed(2)}) scale(${scale.toFixed(3)})`
         );
 
-        arrowsLayer.appendChild(use);
+        arrowsLayer.appendChild(arrow);
       }
     });
 
