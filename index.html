@@ -106,6 +106,7 @@
           <button id="zoomReset" title="Reset zoom">100%</button>
         </div>
       </div>
+
       <div id="previewWrap" class="preview-wrap">
         <div id="preview" class="preview-canvas"></div>
       </div>
@@ -120,17 +121,29 @@
     <div class="modal">
       <button id="helpClose" class="close" aria-label="Close help">&times;</button>
       <h2 id="helpTitle">Help</h2>
+
       <p><strong>What it does:</strong> Applies a double-stroke style and optional boxed directional arrows to GPX/SVG tracks directly in your browser.</p>
+
       <ol>
         <li>Upload your <code>.svg</code> file.</li>
         <li>Choose <em>outer</em>, <em>inner</em>, and optional <em>arrow</em> color.</li>
-        <li>Adjust stroke factors.</li>
-        <li>Set the <code>Group ID</code> (default <code>trk1</code>).</li>
+        <li>Adjust stroke thickness with <strong>Outer factor</strong> and <strong>Inner factor</strong>.</li>
+        <li>Set the <code>Group ID</code> if needed. Default is <code>trk1</code>.</li>
         <li>Optionally remove watermark text.</li>
         <li>Optionally keep only the essential SVG map content.</li>
-        <li>Enable boxed directional arrows if needed.</li>
+        <li>Enable <strong>Directional boxed arrows</strong> if needed.</li>
         <li>Click <strong>Download SVG</strong> to save the result.</li>
       </ol>
+
+      <p><strong>Good starting values:</strong></p>
+      <ul>
+        <li><strong>Outer factor:</strong> 2.5–3.0</li>
+        <li><strong>Inner factor:</strong> 0.6–0.8</li>
+        <li><strong>Arrow spacing:</strong> 24–40</li>
+        <li><strong>Arrow size:</strong> 6–8</li>
+      </ul>
+
+      <p><strong>Note:</strong> after refreshing the page, the last used settings are restored automatically, but the SVG file must be selected again manually.</p>
     </div>
   </div>
 
