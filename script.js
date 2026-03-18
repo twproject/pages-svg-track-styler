@@ -300,7 +300,7 @@ function process(text, opts) {
 
   if (opts.directionArrows) {
     addDirectionalArrows(svg, opts.groupId, {
-      arrowColor: opts.outerColor,
+      arrowColor: opts.innerColor,
       arrowSpacing: parseFloat(opts.arrowSpacing) || 28,
       arrowSize: parseFloat(opts.arrowSize) || 8
     });
