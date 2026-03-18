@@ -39,6 +39,14 @@
           </div>
 
           <div class="form-row">
+            <label>Arrow color</label>
+            <div class="color-row">
+              <input type="color" id="arrowColorPicker" value="#ff0000" title="Pick arrow color">
+              <input type="text" id="arrowColor" value="#ff0000" placeholder="#ff0000">
+            </div>
+          </div>
+
+          <div class="form-row">
             <label>Outer factor <span id="outerFactorVal" class="value">3.00</span></label>
             <input type="range" id="outerFactor" value="3" step="0.1" min="0" max="10">
           </div>
@@ -46,6 +54,16 @@
           <div class="form-row">
             <label>Inner factor <span id="innerFactorVal" class="value">0.70</span></label>
             <input type="range" id="innerFactor" value="0.7" step="0.05" min="0" max="10">
+          </div>
+
+          <div class="form-row">
+            <label>Arrow spacing <span id="arrowSpacingVal" class="value">24</span></label>
+            <input type="range" id="arrowSpacing" value="24" step="1" min="8" max="100">
+          </div>
+
+          <div class="form-row">
+            <label>Arrow size <span id="arrowSizeVal" class="value">7</span></label>
+            <input type="range" id="arrowSize" value="7" step="1" min="4" max="24">
           </div>
         </div>
 
@@ -63,19 +81,7 @@
         </div>
 
         <div class="form-row">
-          <label><input type="checkbox" id="directionArrows"> Directional arrows</label>
-        </div>
-
-        <div class="grid-2">
-          <div class="form-row">
-            <label>Arrow spacing <span id="arrowSpacingVal" class="value">28</span></label>
-            <input type="range" id="arrowSpacing" value="28" step="1" min="8" max="100">
-          </div>
-
-          <div class="form-row">
-            <label>Arrow size <span id="arrowSizeVal" class="value">8</span></label>
-            <input type="range" id="arrowSize" value="8" step="1" min="4" max="24">
-          </div>
+          <label><input type="checkbox" id="directionArrows"> Directional boxed arrows</label>
         </div>
 
         <div class="form-row">
@@ -114,19 +120,17 @@
     <div class="modal">
       <button id="helpClose" class="close" aria-label="Close help">&times;</button>
       <h2 id="helpTitle">Help</h2>
-      <p><strong>What it does:</strong> Applies a double-stroke style and optional directional arrows to GPX/SVG tracks directly in your browser.</p>
+      <p><strong>What it does:</strong> Applies a double-stroke style and optional boxed directional arrows to GPX/SVG tracks directly in your browser.</p>
       <ol>
         <li>Upload your <code>.svg</code> file.</li>
-        <li>Choose <em>outer</em> and <em>inner</em> colors.</li>
+        <li>Choose <em>outer</em>, <em>inner</em>, and optional <em>arrow</em> color.</li>
         <li>Adjust stroke factors.</li>
         <li>Set the <code>Group ID</code> (default <code>trk1</code>).</li>
         <li>Optionally remove watermark text.</li>
         <li>Optionally keep only the essential SVG map content.</li>
-        <li>Optionally enable directional arrows.</li>
+        <li>Enable boxed directional arrows if needed.</li>
         <li>Click <strong>Download SVG</strong> to save the result.</li>
       </ol>
-      <p><strong>Color tips:</strong> Use names like <code>red</code>, <code>yellow</code>, or hex codes like <code>#ff0000</code>, <code>#ffff00</code>.</p>
-      <p><strong>Directional arrows:</strong> arrows are placed along the track direction using the original path geometry.</p>
     </div>
   </div>
 
