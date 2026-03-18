@@ -3,10 +3,12 @@ let lastUrl = null;
 let zoom = 1;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const SETTINGS_KEY = 'svg-track-styler-settings-v3';
+const SETTINGS_KEY = 'svg-track-styler-settings-v4';
 
 const els = {
   file: document.getElementById('inputSvg'),
+  svgUrl: document.getElementById('svgUrl'),
+  loadUrlBtn: document.getElementById('loadUrlBtn'),
   outerColorPicker: document.getElementById('outerColorPicker'),
   innerColorPicker: document.getElementById('innerColorPicker'),
   arrowColorPicker: document.getElementById('arrowColorPicker'),
@@ -28,6 +30,8 @@ const els = {
   autoPreview: document.getElementById('autoPreview'),
   refreshBtn: document.getElementById('refreshBtn'),
   download: document.getElementById('downloadLink'),
+  saveSettingsBtn: document.getElementById('saveSettingsBtn'),
+  resetSettingsBtn: document.getElementById('resetSettingsBtn'),
   status: document.getElementById('status'),
   preview: document.getElementById('preview'),
   zoomIn: document.getElementById('zoomIn'),
@@ -64,9 +68,10 @@ function getSettings() {
     arrowColor: els.arrowColor?.value?.trim() || '',
     outerFactor: els.outerFactor?.value || '3',
     innerFactor: els.innerFactor?.value || '0.7',
-    arrowSpacing: els.arrowSpacing?.value || '24',
+    arrowSpacing: els.arrowSpacing?.value || '120',
     arrowSize: els.arrowSize?.value || '7',
     groupId: els.groupId?.value?.trim() || 'trk1',
+    svgUrl: els.svgUrl?.value?.trim() || '',
     noWatermark: !!els.noWatermark?.checked,
     keepMapOnly: !!els.keepMapOnly?.checked,
     directionArrows: !!els.directionArrows?.checked,
@@ -101,6 +106,7 @@ function loadSettings() {
     if (typeof s.arrowSpacing !== 'undefined') els.arrowSpacing.value = s.arrowSpacing;
     if (typeof s.arrowSize !== 'undefined') els.arrowSize.value = s.arrowSize;
     if (typeof s.groupId === 'string') els.groupId.value = s.groupId || 'trk1';
+    if (typeof s.svgUrl === 'string' && els.svgUrl) els.svgUrl.value = s.svgUrl;
 
     if (typeof s.noWatermark === 'boolean') els.noWatermark.checked = s.noWatermark;
     if (typeof s.keepMapOnly === 'boolean') els.keepMapOnly.checked = s.keepMapOnly;
@@ -113,6 +119,36 @@ function loadSettings() {
   } catch (err) {
     console.warn('Unable to load settings:', err);
   }
+}
+
+function resetSettings() {
+  try {
+    localStorage.removeItem(SETTINGS_KEY);
+  } catch (err) {
+    console.warn('Unable to reset settings:', err);
+  }
+
+  applyColorValue(els.outerColorPicker, els.outerColor, '#ff0000', '#ff0000');
+  applyColorValue(els.innerColorPicker, els.innerColor, '#ffff00', '#ffff00');
+  if (els.arrowColor && els.arrowColorPicker) {
+    applyColorValue(els.arrowColorPicker, els.arrowColor, '#ff0000', '#ff0000');
+  }
+
+  if (els.svgUrl) els.svgUrl.value = '';
+  els.outerFactor.value = '3';
+  els.innerFactor.value = '0.7';
+  els.arrowSpacing.value = '120';
+  els.arrowSize.value = '7';
+  els.groupId.value = 'trk1';
+  els.noWatermark.checked = false;
+  els.keepMapOnly.checked = false;
+  els.directionArrows.checked = false;
+  els.autoPreview.checked = true;
+  zoom = 1;
+
+  updateSliderLabels();
+  saveSettings();
+  setStatus('Settings reset. Re-select or reload the SVG.');
 }
 
 function cleanSvgHard(svg, groupId) {
@@ -377,7 +413,7 @@ function process(text, opts) {
   if (opts.directionArrows) {
     addDirectionalArrows(svg, opts.groupId, {
       arrowColor: opts.arrowColor || opts.outerColor,
-      arrowSpacing: parseFloat(opts.arrowSpacing) || 24,
+      arrowSpacing: parseFloat(opts.arrowSpacing) || 120,
       arrowSize: parseFloat(opts.arrowSize) || 7,
       boxFill: '#ffffff',
       boxFillOpacity: 0.92
@@ -405,7 +441,7 @@ function updatePreview() {
       noWatermark: els.noWatermark.checked,
       keepMapOnly: els.keepMapOnly.checked,
       directionArrows: els.directionArrows.checked,
-      arrowSpacing: parseFloat(els.arrowSpacing.value) || 24,
+      arrowSpacing: parseFloat(els.arrowSpacing.value) || 120,
       arrowSize: parseFloat(els.arrowSize.value) || 7
     });
 
@@ -442,12 +478,51 @@ function saveAndMaybeUpdate() {
   if (els.autoPreview.checked) debouncedUpdate();
 }
 
+async function loadSvgFromText(text, sourceLabel = 'SVG loaded.') {
+  originalText = text;
+  saveSettings();
+  updatePreview();
+  setStatus(sourceLabel);
+}
+
+async function loadSvgFromUrl() {
+  const url = (els.svgUrl?.value || '').trim();
+  if (!url) {
+    setStatus('Please enter an SVG URL.');
+    return;
+  }
+
+  try {
+    setStatus('Loading SVG from URL...');
+    saveSettings();
+
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const text = await response.text();
+
+    if (!/<svg[\s>]/i.test(text)) {
+      throw new Error('The URL did not return a valid SVG.');
+    }
+
+    await loadSvgFromText(text, 'SVG loaded from URL.');
+  } catch (err) {
+    setStatus(`Unable to load SVG from URL: ${err.message}`);
+  }
+}
+
 els.file.addEventListener('change', async (e) => {
   if (!e.target.files.length) return;
   const file = e.target.files[0];
   const text = await file.text();
-  originalText = text;
-  updatePreview();
+  await loadSvgFromText(text, 'SVG loaded from file.');
 });
 
 function syncColor(picker, textInput) {
@@ -463,6 +538,18 @@ function syncColor(picker, textInput) {
     if (isHexColor(v)) picker.value = v;
     saveAndMaybeUpdate();
   });
+}
+
+function updateSliderLabels() {
+  const outerVal = parseFloat(els.outerFactor.value);
+  const innerVal = parseFloat(els.innerFactor.value);
+  const spacingVal = parseFloat(els.arrowSpacing.value);
+  const sizeVal = parseFloat(els.arrowSize.value);
+
+  els.outerFactorVal.textContent = Number.isInteger(outerVal) ? String(outerVal) : outerVal.toFixed(2);
+  els.innerFactorVal.textContent = Number.isInteger(innerVal) ? String(innerVal) : innerVal.toFixed(2);
+  els.arrowSpacingVal.textContent = Number.isInteger(spacingVal) ? String(spacingVal) : spacingVal.toFixed(2);
+  els.arrowSizeVal.textContent = Number.isInteger(sizeVal) ? String(sizeVal) : sizeVal.toFixed(2);
 }
 
 function bindSlider(slider, label) {
@@ -501,9 +588,48 @@ document.addEventListener('DOMContentLoaded', () => {
     els.noWatermark.addEventListener(evt, saveAndMaybeUpdate);
     els.keepMapOnly.addEventListener(evt, saveAndMaybeUpdate);
     els.directionArrows.addEventListener(evt, saveAndMaybeUpdate);
+    if (els.svgUrl) els.svgUrl.addEventListener(evt, debouncedSave);
   });
 
   els.refreshBtn.addEventListener('click', updatePreview);
+
+  if (els.loadUrlBtn) {
+    els.loadUrlBtn.addEventListener('click', loadSvgFromUrl);
+  }
+
+  if (els.svgUrl) {
+    els.svgUrl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadSvgFromUrl();
+      }
+    });
+  }
+
+  if (els.saveSettingsBtn) {
+    els.saveSettingsBtn.addEventListener('click', () => {
+      saveSettings();
+      setStatus('Settings saved.');
+    });
+  }
+
+  if (els.resetSettingsBtn) {
+    els.resetSettingsBtn.addEventListener('click', () => {
+      resetSettings();
+      if (originalText && els.autoPreview.checked) {
+        updatePreview();
+      } else {
+        els.preview.innerHTML = '';
+        if (lastUrl) {
+          URL.revokeObjectURL(lastUrl);
+          lastUrl = null;
+        }
+        els.download.removeAttribute('href');
+        els.download.classList.add('disabled');
+        els.download.setAttribute('aria-disabled', 'true');
+      }
+    });
+  }
 
   els.autoPreview.addEventListener('change', () => {
     saveSettings();
@@ -554,5 +680,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  setStatus('Settings restored. Re-select the SVG file to continue.');
+  updateSliderLabels();
+  setStatus('Settings restored. Select a local SVG or load one from URL.');
 });
