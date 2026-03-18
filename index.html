@@ -21,6 +21,14 @@
         <label for="inputSvg">Select SVG file:</label>
         <input type="file" id="inputSvg" accept="image/svg+xml">
 
+        <div class="form-row">
+          <label for="svgUrl">Or load SVG from URL</label>
+          <input type="url" id="svgUrl" placeholder="https://example.com/map.svg">
+          <div class="actions compact">
+            <button id="loadUrlBtn" class="secondary" type="button">Load URL</button>
+          </div>
+        </div>
+
         <div class="grid-2">
           <div class="form-row">
             <label>Outer color</label>
@@ -57,8 +65,8 @@
           </div>
 
           <div class="form-row">
-            <label>Arrow spacing <span id="arrowSpacingVal" class="value">24</span></label>
-            <input type="range" id="arrowSpacing" value="24" step="1" min="10" max="500">
+            <label>Arrow spacing <span id="arrowSpacingVal" class="value">120</span></label>
+            <input type="range" id="arrowSpacing" value="120" step="5" min="20" max="500">
           </div>
 
           <div class="form-row">
@@ -89,8 +97,10 @@
         </div>
 
         <div class="actions">
-          <button id="refreshBtn" class="secondary">Refresh preview</button>
+          <button id="refreshBtn" class="secondary" type="button">Refresh preview</button>
           <a id="downloadLink" class="primary disabled" download="styled.svg" aria-disabled="true">Download SVG</a>
+          <button id="saveSettingsBtn" class="secondary" type="button">Save settings</button>
+          <button id="resetSettingsBtn" class="secondary" type="button">Reset settings</button>
         </div>
 
         <p id="status" class="status"></p>
@@ -101,9 +111,9 @@
       <div class="preview-header">
         <span>Live Preview</span>
         <div class="zoom">
-          <button id="zoomOut" title="Zoom out">–</button>
-          <button id="zoomIn" title="Zoom in">+</button>
-          <button id="zoomReset" title="Reset zoom">100%</button>
+          <button id="zoomOut" title="Zoom out" type="button">–</button>
+          <button id="zoomIn" title="Zoom in" type="button">+</button>
+          <button id="zoomReset" title="Reset zoom" type="button">100%</button>
         </div>
       </div>
 
@@ -125,25 +135,17 @@
       <p><strong>What it does:</strong> Applies a double-stroke style and optional boxed directional arrows to GPX/SVG tracks directly in your browser.</p>
 
       <ol>
-        <li>Upload your <code>.svg</code> file.</li>
+        <li>Upload your <code>.svg</code> file or paste a direct SVG URL.</li>
         <li>Choose <em>outer</em>, <em>inner</em>, and optional <em>arrow</em> color.</li>
-        <li>Adjust stroke thickness with <strong>Outer factor</strong> and <strong>Inner factor</strong>.</li>
+        <li>Adjust <strong>Outer factor</strong> and <strong>Inner factor</strong>.</li>
         <li>Set the <code>Group ID</code> if needed. Default is <code>trk1</code>.</li>
         <li>Optionally remove watermark text.</li>
         <li>Optionally keep only the essential SVG map content.</li>
-        <li>Enable <strong>Directional boxed arrows</strong> if needed.</li>
+        <li>Enable boxed directional arrows if needed.</li>
         <li>Click <strong>Download SVG</strong> to save the result.</li>
       </ol>
 
-      <p><strong>Good starting values:</strong></p>
-      <ul>
-        <li><strong>Outer factor:</strong> 2.5–3.0</li>
-        <li><strong>Inner factor:</strong> 0.6–0.8</li>
-        <li><strong>Arrow spacing:</strong> 24–40</li>
-        <li><strong>Arrow size:</strong> 6–8</li>
-      </ul>
-
-      <p><strong>Note:</strong> after refreshing the page, the last used settings are restored automatically, but the SVG file must be selected again manually.</p>
+      <p><strong>Note:</strong> settings are saved in your browser and restored automatically. Local SVG files must still be selected again manually after refresh. SVG URLs are restored as text, but are not auto-fetched until you click <strong>Load URL</strong>.</p>
     </div>
   </div>
 
