@@ -3,13 +3,16 @@ let lastUrl = null;
 let zoom = 1;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
 const els = {
   file: document.getElementById('inputSvg'),
   outerColorPicker: document.getElementById('outerColorPicker'),
   innerColorPicker: document.getElementById('innerColorPicker'),
+  arrowColorPicker: document.getElementById('arrowColorPicker'),
   outerColor: document.getElementById('outerColor'),
   innerColor: document.getElementById('innerColor'),
+  arrowColor: document.getElementById('arrowColor'),
   outerFactor: document.getElementById('outerFactor'),
   innerFactor: document.getElementById('innerFactor'),
   outerFactorVal: document.getElementById('outerFactorVal'),
@@ -121,9 +124,9 @@ function pointAtDistance(points, target) {
   return { ...points[points.length - 1] };
 }
 
-function tangentAtDistance(points, d, delta) {
+function tangentAtDistance(points, totalLen, d, delta) {
   const p0 = pointAtDistance(points, Math.max(0, d - delta));
-  const p1 = pointAtDistance(points, Math.min(polylineLength(points), d + delta));
+  const p1 = pointAtDistance(points, Math.min(totalLen, d + delta));
 
   if (!p0 || !p1) return null;
 
@@ -139,36 +142,59 @@ function tangentAtDistance(points, d, delta) {
   };
 }
 
-function makeChevronPoints(center, tangent, size) {
-  const tx = tangent.x;
-  const ty = tangent.y;
+function ensureArrowBoxSymbol(svg, opts) {
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = createSvgEl(svg.ownerDocument, 'defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
 
-  const nx = -ty;
-  const ny = tx;
+  let symbol = svg.querySelector('#dirArrowBoxSymbol');
+  if (!symbol) {
+    symbol = createSvgEl(svg.ownerDocument, 'symbol');
+    symbol.setAttribute('id', 'dirArrowBoxSymbol');
+    symbol.setAttribute('viewBox', '0 0 24 24');
 
-  const back = size * 0.9;
-  const half = size * 0.55;
-  const tipForward = size * 0.55;
+    const rect = createSvgEl(svg.ownerDocument, 'rect');
+    rect.setAttribute('x', '3');
+    rect.setAttribute('y', '3');
+    rect.setAttribute('width', '18');
+    rect.setAttribute('height', '18');
+    rect.setAttribute('rx', '3');
+    rect.setAttribute('ry', '3');
 
-  const left = {
-    x: center.x - tx * back - nx * half,
-    y: center.y - ty * back - ny * half
-  };
+    const path = createSvgEl(svg.ownerDocument, 'path');
+    path.setAttribute('d', 'M8 12H15M12 9L15 12L12 15');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
 
-  const tip = {
-    x: center.x + tx * tipForward,
-    y: center.y + ty * tipForward
-  };
+    symbol.appendChild(rect);
+    symbol.appendChild(path);
+    defs.appendChild(symbol);
+  }
 
-  const right = {
-    x: center.x - tx * back + nx * half,
-    y: center.y - ty * back + ny * half
-  };
+  const rect = symbol.querySelector('rect');
+  const path = symbol.querySelector('path');
 
-  return `${left.x.toFixed(2)},${left.y.toFixed(2)} ${tip.x.toFixed(2)},${tip.y.toFixed(2)} ${right.x.toFixed(2)},${right.y.toFixed(2)}`;
+  if (rect) {
+    rect.setAttribute('fill', opts.boxFill || '#ffffff');
+    rect.setAttribute('fill-opacity', String(opts.boxFillOpacity ?? 0.92));
+    rect.setAttribute('stroke', opts.arrowColor);
+    rect.setAttribute('stroke-width', '1.8');
+  }
+
+  if (path) {
+    path.setAttribute('stroke', opts.arrowColor);
+    path.setAttribute('stroke-width', '2');
+  }
+
+  return symbol;
 }
 
 function addDirectionalArrows(svg, groupId, opts) {
+  ensureArrowBoxSymbol(svg, opts);
+
   const groups = svg.querySelectorAll(`g[id='${groupId}']`);
 
   groups.forEach(g => {
@@ -194,26 +220,27 @@ function addDirectionalArrows(svg, groupId, opts) {
       const total = polylineLength(pts);
       if (!Number.isFinite(total) || total <= opts.arrowSpacing * 1.5) return;
 
-      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 2.0);
-      const tangentDelta = Math.max(2, opts.arrowSize * 0.6);
+      const margin = Math.max(opts.arrowSpacing, opts.arrowSize * 2.5);
+      const tangentDelta = Math.max(2, opts.arrowSize * 0.8);
 
       for (let d = margin; d < total - margin; d += opts.arrowSpacing) {
         const center = pointAtDistance(pts, d);
-        const tangent = tangentAtDistance(pts, d, tangentDelta);
+        const tangent = tangentAtDistance(pts, total, d, tangentDelta);
 
         if (!center || !tangent) continue;
 
-        const chev = createSvgEl(svg.ownerDocument, 'polyline');
-        chev.setAttribute('class', 'direction-arrow');
-        chev.setAttribute('points', makeChevronPoints(center, tangent, opts.arrowSize));
-        chev.setAttribute('fill', 'none');
-        chev.setAttribute('stroke', opts.arrowColor);
-        chev.setAttribute('stroke-width', String(Math.max(1.2, opts.arrowSize * 0.22)));
-        chev.setAttribute('stroke-linecap', 'round');
-        chev.setAttribute('stroke-linejoin', 'round');
-        chev.setAttribute('vector-effect', 'non-scaling-stroke');
+        const angle = Math.atan2(tangent.y, tangent.x) * 180 / Math.PI;
+        const scale = Math.max(0.35, opts.arrowSize / 12);
 
-        arrowsLayer.appendChild(chev);
+        const use = createSvgEl(svg.ownerDocument, 'use');
+        use.setAttribute('href', '#dirArrowBoxSymbol');
+        use.setAttributeNS(XLINK_NS, 'xlink:href', '#dirArrowBoxSymbol');
+        use.setAttribute(
+          'transform',
+          `translate(${center.x.toFixed(2)} ${center.y.toFixed(2)}) rotate(${angle.toFixed(2)}) translate(-12 -12) scale(${scale.toFixed(3)})`
+        );
+
+        arrowsLayer.appendChild(use);
       }
     });
 
@@ -233,7 +260,6 @@ function styleTrack(svg, groupId, opts) {
       return (
         !node.classList.contains('styled-track-outer') &&
         !node.classList.contains('styled-track-inner') &&
-        !node.classList.contains('direction-arrow') &&
         !node.closest('.direction-arrows')
       );
     });
@@ -300,9 +326,11 @@ function process(text, opts) {
 
   if (opts.directionArrows) {
     addDirectionalArrows(svg, opts.groupId, {
-      arrowColor: opts.innerColor,
-      arrowSpacing: parseFloat(opts.arrowSpacing) || 28,
-      arrowSize: parseFloat(opts.arrowSize) || 8
+      arrowColor: opts.arrowColor || opts.outerColor,
+      arrowSpacing: parseFloat(opts.arrowSpacing) || 24,
+      arrowSize: parseFloat(opts.arrowSize) || 7,
+      boxFill: '#ffffff',
+      boxFillOpacity: 0.92
     });
   } else {
     svg.querySelectorAll('.direction-arrows').forEach(n => n.remove());
@@ -320,14 +348,15 @@ function updatePreview() {
     const outText = process(originalText, {
       outerColor: els.outerColor.value.trim(),
       innerColor: els.innerColor.value.trim(),
+      arrowColor: els.arrowColor.value.trim(),
       outerFactor: parseFloat(els.outerFactor.value) || 3,
       innerFactor: parseFloat(els.innerFactor.value) || 0.7,
       groupId: els.groupId.value.trim() || 'trk1',
       noWatermark: els.noWatermark.checked,
       keepMapOnly: els.keepMapOnly.checked,
       directionArrows: els.directionArrows.checked,
-      arrowSpacing: parseFloat(els.arrowSpacing.value) || 28,
-      arrowSize: parseFloat(els.arrowSize.value) || 8
+      arrowSpacing: parseFloat(els.arrowSpacing.value) || 24,
+      arrowSize: parseFloat(els.arrowSize.value) || 7
     });
 
     els.preview.innerHTML = outText;
@@ -381,6 +410,7 @@ function syncColor(picker, textInput) {
 
 syncColor(els.outerColorPicker, els.outerColor);
 syncColor(els.innerColorPicker, els.innerColor);
+syncColor(els.arrowColorPicker, els.arrowColor);
 
 function bindSlider(slider, label) {
   const updateLabel = () => {
