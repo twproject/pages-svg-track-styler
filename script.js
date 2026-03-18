@@ -4,6 +4,7 @@ let zoom = 1;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
+const SETTINGS_KEY = 'svg-track-styler-settings-v2';
 
 const els = {
   file: document.getElementById('inputSvg'),
@@ -45,6 +46,74 @@ function serializeSvg(svg) {
 
 function createSvgEl(doc, tag) {
   return doc.createElementNS(SVG_NS, tag);
+}
+
+function isHexColor(v) {
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test((v || '').trim());
+}
+
+function applyColorValue(picker, input, value, fallback) {
+  const finalValue = value || fallback;
+  if (input) input.value = finalValue;
+  if (picker && isHexColor(finalValue)) picker.value = finalValue;
+}
+
+function getSettings() {
+  return {
+    outerColor: els.outerColor?.value?.trim() || '',
+    innerColor: els.innerColor?.value?.trim() || '',
+    arrowColor: els.arrowColor?.value?.trim() || '',
+    outerFactor: els.outerFactor?.value || '3',
+    innerFactor: els.innerFactor?.value || '0.7',
+    arrowSpacing: els.arrowSpacing?.value || '24',
+    arrowSize: els.arrowSize?.value || '7',
+    groupId: els.groupId?.value?.trim() || 'trk1',
+    noWatermark: !!els.noWatermark?.checked,
+    keepMapOnly: !!els.keepMapOnly?.checked,
+    directionArrows: !!els.directionArrows?.checked,
+    autoPreview: !!els.autoPreview?.checked,
+    zoom
+  };
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(getSettings()));
+  } catch (err) {
+    console.warn('Unable to save settings:', err);
+  }
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+
+    const s = JSON.parse(raw);
+
+    applyColorValue(els.outerColorPicker, els.outerColor, s.outerColor, '#ff0000');
+    applyColorValue(els.innerColorPicker, els.innerColor, s.innerColor, '#ffff00');
+    if (els.arrowColor && els.arrowColorPicker) {
+      applyColorValue(els.arrowColorPicker, els.arrowColor, s.arrowColor, '#ff0000');
+    }
+
+    if (typeof s.outerFactor !== 'undefined') els.outerFactor.value = s.outerFactor;
+    if (typeof s.innerFactor !== 'undefined') els.innerFactor.value = s.innerFactor;
+    if (typeof s.arrowSpacing !== 'undefined') els.arrowSpacing.value = s.arrowSpacing;
+    if (typeof s.arrowSize !== 'undefined') els.arrowSize.value = s.arrowSize;
+    if (typeof s.groupId === 'string') els.groupId.value = s.groupId || 'trk1';
+
+    if (typeof s.noWatermark === 'boolean') els.noWatermark.checked = s.noWatermark;
+    if (typeof s.keepMapOnly === 'boolean') els.keepMapOnly.checked = s.keepMapOnly;
+    if (typeof s.directionArrows === 'boolean') els.directionArrows.checked = s.directionArrows;
+    if (typeof s.autoPreview === 'boolean') els.autoPreview.checked = s.autoPreview;
+
+    if (typeof s.zoom === 'number' && Number.isFinite(s.zoom)) {
+      zoom = Math.min(4, Math.max(0.2, s.zoom));
+    }
+  } catch (err) {
+    console.warn('Unable to load settings:', err);
+  }
 }
 
 function cleanSvgHard(svg, groupId) {
@@ -180,16 +249,37 @@ function ensureArrowBoxSymbol(svg, opts) {
   if (rect) {
     rect.setAttribute('fill', opts.boxFill || '#ffffff');
     rect.setAttribute('fill-opacity', String(opts.boxFillOpacity ?? 0.92));
-    rect.setAttribute('stroke', opts.arrowColor);
+    rect.setAttribute('stroke', opts.arrowColor || '#ff0000');
     rect.setAttribute('stroke-width', '1.8');
   }
 
   if (path) {
-    path.setAttribute('stroke', opts.arrowColor);
+    path.setAttribute('stroke', opts.arrowColor || '#ff0000');
     path.setAttribute('stroke-width', '2');
   }
 
   return symbol;
+}
+
+function getOriginalTrackPolylines(group, groupId) {
+  const direct = Array.from(group.querySelectorAll(`polyline[id^='${groupId}:']`)).filter(node => {
+    return (
+      !node.classList.contains('styled-track-outer') &&
+      !node.classList.contains('styled-track-inner') &&
+      !node.closest('.direction-arrows')
+    );
+  });
+
+  if (direct.length) return direct;
+
+  return Array.from(group.querySelectorAll('polyline')).filter(node => {
+    return (
+      !node.classList.contains('styled-track-outer') &&
+      !node.classList.contains('styled-track-inner') &&
+      !node.classList.contains('direction-arrow') &&
+      !node.closest('.direction-arrows')
+    );
+  });
 }
 
 function addDirectionalArrows(svg, groupId, opts) {
@@ -200,13 +290,7 @@ function addDirectionalArrows(svg, groupId, opts) {
   groups.forEach(g => {
     g.querySelectorAll('.direction-arrows').forEach(n => n.remove());
 
-    const originalPolylines = Array.from(g.querySelectorAll(`polyline[id^='${groupId}:']`)).filter(node => {
-      return (
-        !node.classList.contains('styled-track-outer') &&
-        !node.classList.contains('styled-track-inner')
-      );
-    });
-
+    const originalPolylines = getOriginalTrackPolylines(g, groupId);
     if (!originalPolylines.length) return;
 
     const arrowsLayer = createSvgEl(svg.ownerDocument, 'g');
@@ -230,7 +314,7 @@ function addDirectionalArrows(svg, groupId, opts) {
         if (!center || !tangent) continue;
 
         const angle = Math.atan2(tangent.y, tangent.x) * 180 / Math.PI;
-        const scale = Math.max(0.35, opts.arrowSize / 12);
+        const scale = Math.max(0.32, opts.arrowSize / 12);
 
         const use = createSvgEl(svg.ownerDocument, 'use');
         use.setAttribute('href', '#dirArrowBoxSymbol');
@@ -256,13 +340,7 @@ function styleTrack(svg, groupId, opts) {
   groups.forEach(g => {
     g.querySelectorAll('.styled-track-outer, .styled-track-inner').forEach(n => n.remove());
 
-    const originalPolylines = Array.from(g.querySelectorAll(`polyline[id^='${groupId}:']`)).filter(node => {
-      return (
-        !node.classList.contains('styled-track-outer') &&
-        !node.classList.contains('styled-track-inner') &&
-        !node.closest('.direction-arrows')
-      );
-    });
+    const originalPolylines = getOriginalTrackPolylines(g, groupId);
 
     originalPolylines.forEach(node => {
       const parent = node.parentNode;
@@ -348,7 +426,7 @@ function updatePreview() {
     const outText = process(originalText, {
       outerColor: els.outerColor.value.trim(),
       innerColor: els.innerColor.value.trim(),
-      arrowColor: els.arrowColor.value.trim(),
+      arrowColor: els.arrowColor ? els.arrowColor.value.trim() : '',
       outerFactor: parseFloat(els.outerFactor.value) || 3,
       innerFactor: parseFloat(els.innerFactor.value) || 0.7,
       groupId: els.groupId.value.trim() || 'trk1',
@@ -369,6 +447,7 @@ function updatePreview() {
     els.download.classList.remove('disabled');
     els.download.setAttribute('aria-disabled', 'false');
 
+    saveSettings();
     setStatus('Preview updated.');
   } catch (err) {
     setStatus(err.message || 'Unexpected error.');
@@ -384,6 +463,12 @@ function debounce(fn, t = 250) {
 }
 
 const debouncedUpdate = debounce(updatePreview, 250);
+const debouncedSave = debounce(saveSettings, 150);
+
+function saveAndMaybeUpdate() {
+  debouncedSave();
+  if (els.autoPreview.checked) debouncedUpdate();
+}
 
 els.file.addEventListener('change', async (e) => {
   if (!e.target.files.length) return;
@@ -394,23 +479,19 @@ els.file.addEventListener('change', async (e) => {
 });
 
 function syncColor(picker, textInput) {
+  if (!picker || !textInput) return;
+
   picker.addEventListener('input', () => {
     textInput.value = picker.value;
-    if (els.autoPreview.checked) debouncedUpdate();
+    saveAndMaybeUpdate();
   });
 
   textInput.addEventListener('input', () => {
     const v = textInput.value.trim();
-    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
-      picker.value = v;
-    }
-    if (els.autoPreview.checked) debouncedUpdate();
+    if (isHexColor(v)) picker.value = v;
+    saveAndMaybeUpdate();
   });
 }
-
-syncColor(els.outerColorPicker, els.outerColor);
-syncColor(els.innerColorPicker, els.innerColor);
-syncColor(els.arrowColorPicker, els.arrowColor);
 
 function bindSlider(slider, label) {
   const updateLabel = () => {
@@ -420,67 +501,64 @@ function bindSlider(slider, label) {
 
   slider.addEventListener('input', () => {
     updateLabel();
-    if (els.autoPreview.checked) debouncedUpdate();
+    saveAndMaybeUpdate();
   });
 
   slider.addEventListener('change', () => {
     updateLabel();
-    if (els.autoPreview.checked) debouncedUpdate();
+    saveAndMaybeUpdate();
   });
 
   updateLabel();
 }
 
-bindSlider(els.outerFactor, els.outerFactorVal);
-bindSlider(els.innerFactor, els.innerFactorVal);
-bindSlider(els.arrowSpacing, els.arrowSpacingVal);
-bindSlider(els.arrowSize, els.arrowSizeVal);
-
-['input', 'change'].forEach(evt => {
-  els.groupId.addEventListener(evt, () => {
-    if (els.autoPreview.checked) debouncedUpdate();
-  });
-
-  els.noWatermark.addEventListener(evt, () => {
-    if (els.autoPreview.checked) debouncedUpdate();
-  });
-
-  els.keepMapOnly.addEventListener(evt, () => {
-    if (els.autoPreview.checked) debouncedUpdate();
-  });
-
-  els.directionArrows.addEventListener(evt, () => {
-    if (els.autoPreview.checked) debouncedUpdate();
-  });
-});
-
-els.refreshBtn.addEventListener('click', updatePreview);
-
-els.autoPreview.addEventListener('change', () => {
-  setStatus(els.autoPreview.checked ? 'Auto preview ON' : 'Auto preview OFF');
-});
-
-els.zoomIn.addEventListener('click', () => {
-  zoom = Math.min(4, zoom + 0.1);
-  updatePreview();
-});
-
-els.zoomOut.addEventListener('click', () => {
-  zoom = Math.max(0.2, zoom - 0.1);
-  updatePreview();
-});
-
-els.zoomReset.addEventListener('click', () => {
-  zoom = 1;
-  updatePreview();
-});
-
 document.addEventListener('DOMContentLoaded', () => {
+  loadSettings();
+
+  bindSlider(els.outerFactor, els.outerFactorVal);
+  bindSlider(els.innerFactor, els.innerFactorVal);
+  bindSlider(els.arrowSpacing, els.arrowSpacingVal);
+  bindSlider(els.arrowSize, els.arrowSizeVal);
+
+  syncColor(els.outerColorPicker, els.outerColor);
+  syncColor(els.innerColorPicker, els.innerColor);
+  syncColor(els.arrowColorPicker, els.arrowColor);
+
+  ['input', 'change'].forEach(evt => {
+    els.groupId.addEventListener(evt, saveAndMaybeUpdate);
+    els.noWatermark.addEventListener(evt, saveAndMaybeUpdate);
+    els.keepMapOnly.addEventListener(evt, saveAndMaybeUpdate);
+    els.directionArrows.addEventListener(evt, saveAndMaybeUpdate);
+  });
+
+  els.refreshBtn.addEventListener('click', updatePreview);
+
+  els.autoPreview.addEventListener('change', () => {
+    saveSettings();
+    setStatus(els.autoPreview.checked ? 'Auto preview ON' : 'Auto preview OFF');
+  });
+
+  els.zoomIn.addEventListener('click', () => {
+    zoom = Math.min(4, zoom + 0.1);
+    saveSettings();
+    updatePreview();
+  });
+
+  els.zoomOut.addEventListener('click', () => {
+    zoom = Math.max(0.2, zoom - 0.1);
+    saveSettings();
+    updatePreview();
+  });
+
+  els.zoomReset.addEventListener('click', () => {
+    zoom = 1;
+    saveSettings();
+    updatePreview();
+  });
+
   const helpBtn = document.getElementById('helpBtn');
   const helpOverlay = document.getElementById('helpOverlay');
   const helpClose = document.getElementById('helpClose');
-
-  if (!helpBtn || !helpOverlay || !helpClose) return;
 
   function openHelp() {
     helpOverlay.classList.remove('hidden');
@@ -491,12 +569,18 @@ document.addEventListener('DOMContentLoaded', () => {
     helpOverlay.classList.add('hidden');
   }
 
-  helpBtn.addEventListener('click', openHelp);
-  helpClose.addEventListener('click', closeHelp);
-  helpOverlay.addEventListener('click', (e) => {
-    if (e.target === helpOverlay) closeHelp();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) closeHelp();
-  });
+  if (helpBtn && helpOverlay && helpClose) {
+    helpBtn.addEventListener('click', openHelp);
+    helpClose.addEventListener('click', closeHelp);
+    helpOverlay.addEventListener('click', (e) => {
+      if (e.target === helpOverlay) closeHelp();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) {
+        closeHelp();
+      }
+    });
+  }
+
+  setStatus('Settings restored. Re-select the SVG file to continue.');
 });
